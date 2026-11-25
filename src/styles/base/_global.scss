@@ -1,0 +1,15 @@
+
+@use '../abstracts/variables' as *;
+
+body {
+  font-family: $font-family;
+  color: $text-primary;
+  background: $background;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.app-surface {
+  min-height: 100vh;
+  background: $background;
+}

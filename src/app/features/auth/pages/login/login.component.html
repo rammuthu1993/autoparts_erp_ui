@@ -1,0 +1,163 @@
+<div class="login-card">
+
+  <div class="mobile-brand">
+    <div class="mobile-logo">AP</div>
+    <span>AutoParts ERP</span>
+  </div>
+
+  <header class="login-heading">
+
+    <h2>Welcome back</h2>
+
+    <p>
+      Sign in to access your ERP workspace.
+    </p>
+
+  </header>
+
+  @if (errorMessage(); as error) {
+    <div class="error-banner" role="alert">
+      {{ error }}
+    </div>
+  }
+
+  <form
+    [formGroup]="loginForm"
+    (ngSubmit)="submit()"
+    novalidate
+  >
+
+    <div class="form-field">
+
+      <label for="username">
+        Username <span class="required">*</span>
+      </label>
+
+      <input
+        id="username"
+        type="text"
+        formControlName="username"
+        placeholder="Enter your username"
+        autocomplete="username"
+        maxlength="100"
+        [attr.aria-invalid]="
+          loginForm.controls.username.invalid &&
+          loginForm.controls.username.touched
+        "
+        aria-describedby="username-error"
+      />
+
+      @if (
+        loginForm.controls.username.touched &&
+        loginForm.controls.username.hasError('required')
+      ) {
+        <small id="username-error" class="field-error">
+          Username is required.
+        </small>
+      }
+
+      @if (
+        loginForm.controls.username.touched &&
+        loginForm.controls.username.hasError('maxlength')
+      ) {
+        <small id="username-error" class="field-error">
+          Username cannot exceed 100 characters.
+        </small>
+      }
+
+    </div>
+
+    <div class="form-field">
+
+      <label for="password">
+        Password <span class="required">*</span>
+      </label>
+
+      <div class="password-container">
+
+        <input
+          id="password"
+          [type]="showPassword() ? 'text' : 'password'"
+          formControlName="password"
+          placeholder="Enter your password"
+          autocomplete="current-password"
+          maxlength="128"
+          [attr.aria-invalid]="
+            loginForm.controls.password.invalid &&
+            loginForm.controls.password.touched
+          "
+          aria-describedby="password-error"
+        />
+
+        <button
+          type="button"
+          class="password-toggle"
+          (click)="togglePasswordVisibility()"
+          [attr.aria-label]="
+            showPassword() ? 'Hide password' : 'Show password'
+          "
+          [attr.aria-pressed]="showPassword()"
+        >
+          {{ showPassword() ? 'Hide' : 'Show' }}
+        </button>
+
+      </div>
+
+      @if (
+        loginForm.controls.password.touched &&
+        loginForm.controls.password.hasError('required')
+      ) {
+        <small id="password-error" class="field-error">
+          Password is required.
+        </small>
+      }
+
+    </div>
+
+    <div class="form-options">
+
+      <label class="remember-option">
+
+        <input
+          type="checkbox"
+          formControlName="rememberMe"
+        />
+
+        <span>Remember me</span>
+
+      </label>
+
+      <button
+        type="button"
+        class="forgot-password"
+        disabled
+      >
+        Forgot password?
+      </button>
+
+    </div>
+
+    <button
+      type="submit"
+      class="login-button"
+      [disabled]="isSubmitting()"
+    >
+
+      @if (isSubmitting()) {
+        <span class="button-spinner"></span>
+        Signing in...
+      } @else {
+        Sign in
+        <span aria-hidden="true">→</span>
+      }
+
+    </button>
+
+  </form>
+
+  <footer class="login-footer">
+    <span>AutoParts ERP</span>
+    <span>Version 1.0.0</span>
+  </footer>
+
+</div>

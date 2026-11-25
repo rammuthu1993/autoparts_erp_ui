@@ -1,0 +1,235 @@
+<section class="dashboard-page">
+  <div class="page-heading">
+    <div>
+      <div class="eyebrow">BUSINESS OVERVIEW</div>
+      <h1>Dashboard</h1>
+      <p class="page-subtitle">A clear view of your sales, purchasing, expenses and stock health.</p>
+    </div>
+    <div class="heading-actions">
+      <div class="date-filter">
+        <app-icon name="calendar" [size]="16" />
+        <input aria-label="From date" type="date" [value]="fromDate()" (change)="onFromDateChange($event)" />
+        <span>to</span>
+        <input aria-label="To date" type="date" [value]="toDate()" (change)="onToDateChange($event)" />
+      </div>
+      <button class="refresh-button" type="button" (click)="loadDashboard()" [disabled]="loading()">
+        <app-icon name="refresh" [size]="16" />
+        <span>{{ loading() ? 'Loading' : 'Refresh' }}</span>
+      </button>
+    </div>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="error-banner" role="alert">
+      <app-icon name="alert" [size]="18" />
+      <span>{{ errorMessage() }}</span>
+      <button type="button" (click)="loadDashboard()">Retry</button>
+    </div>
+  }
+
+  @if (loading() && !summary()) {
+    <div class="loading-panel">
+      <div class="loading-spinner"></div>
+      <strong>Loading your business overview</strong>
+      <span>Retrieving summary and stock information…</span>
+    </div>
+  } @else {
+    <div class="section-caption">
+      <span>PERFORMANCE SNAPSHOT</span>
+      @if (lastUpdated()) {
+        <span class="updated-at">Updated {{ lastUpdated() | date:'h:mm a' }}</span>
+      }
+    </div>
+
+    <div class="kpi-grid">
+      <article class="kpi-card">
+        <div class="kpi-top">
+          <span class="kpi-icon sales-icon"><app-icon name="receipt" [size]="19" /></span>
+          <span class="kpi-label">Sales invoices</span>
+        </div>
+        <div class="kpi-value">{{ sales()?.invoiceCount ?? 0 | number }}</div>
+        <div class="kpi-bottom">
+          <span class="kpi-context">Invoice value</span>
+          <strong>{{ sales()?.invoiceTotal ?? 0 | currency:'INR':'symbol':'1.0-0' }}</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-top">
+          <span class="kpi-icon collection-icon"><app-icon name="wallet" [size]="19" /></span>
+          <span class="kpi-label">Collections received</span>
+        </div>
+        <div class="kpi-value">{{ sales()?.collectionTotal ?? 0 | currency:'INR':'symbol':'1.0-0' }}</div>
+        <div class="kpi-bottom">
+          <span class="kpi-context">Paid against invoices</span>
+          <strong>{{ sales()?.invoicePaidAmount ?? 0 | currency:'INR':'symbol':'1.0-0' }}</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-top">
+          <span class="kpi-icon outstanding-icon"><app-icon name="receipt" [size]="19" /></span>
+          <span class="kpi-label">Sales outstanding</span>
+        </div>
+        <div class="kpi-value">{{ sales()?.invoiceOutstandingAmount ?? 0 | currency:'INR':'symbol':'1.0-0' }}</div>
+        <div class="kpi-bottom">
+          <span class="kpi-context">Open invoice balance</span>
+          <strong>{{ sales()?.invoiceCount ?? 0 }} invoices</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-top">
+          <span class="kpi-icon purchase-icon"><app-icon name="shopping-cart" [size]="19" /></span>
+          <span class="kpi-label">Purchases</span>
+        </div>
+        <div class="kpi-value">{{ purchases()?.purchaseTotal ?? 0 | currency:'INR':'symbol':'1.0-0' }}</div>
+        <div class="kpi-bottom">
+          <span class="kpi-context">Purchase entries</span>
+          <strong>{{ purchases()?.purchaseCount ?? 0 }} records</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-top">
+          <span class="kpi-icon expense-icon"><app-icon name="wallet" [size]="19" /></span>
+          <span class="kpi-label">Expenses</span>
+        </div>
+        <div class="kpi-value">{{ expenses()?.expenseTotal ?? 0 | currency:'INR':'symbol':'1.0-0' }}</div>
+        <div class="kpi-bottom">
+          <span class="kpi-context">Expense entries</span>
+          <strong>{{ expenses()?.expenseCount ?? 0 }} records</strong>
+        </div>
+      </article>
+
+      <article class="kpi-card" [class.kpi-warning]="lowStockTotal() > 0">
+        <div class="kpi-top">
+          <span class="kpi-icon stock-icon"><app-icon name="alert" [size]="19" /></span>
+          <span class="kpi-label">Low stock items</span>
+        </div>
+        <div class="kpi-value">{{ lowStockTotal() | number }}</div>
+        <div class="kpi-bottom">
+          <span class="kpi-context">At or below minimum stock</span>
+          <strong>{{ lowStockTotal() > 0 ? 'Attention needed' : 'No alerts' }}</strong>
+        </div>
+      </article>
+    </div>
+
+    <div class="content-grid">
+      <section class="panel payment-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Sales collection mix</h2>
+            <p>Collections grouped by payment method</p>
+          </div>
+          <span class="panel-icon"><app-icon name="chart" [size]="18" /></span>
+        </div>
+        @if (collectionChannels().length) {
+          <div class="channel-list">
+            @for (channel of collectionChannels(); track channel.label) {
+              <div class="channel-row">
+                <div class="channel-meta">
+                  <span>{{ channel.label }}</span>
+                  <strong>{{ channel.value | currency:'INR':'symbol':'1.0-0' }}</strong>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill sales-fill" [style.width.%]="channel.percent"></div>
+                </div>
+                <span class="channel-percent">{{ channel.percent }}%</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="empty-state">No collection data for this period.</div>
+        }
+      </section>
+
+      <section class="panel purchase-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Purchase payments</h2>
+            <p>Payments grouped by method</p>
+          </div>
+          <span class="panel-icon"><app-icon name="shopping-cart" [size]="18" /></span>
+        </div>
+        @if (purchaseChannels().length) {
+          <div class="channel-list">
+            @for (channel of purchaseChannels(); track channel.label) {
+              <div class="channel-row">
+                <div class="channel-meta">
+                  <span>{{ channel.label }}</span>
+                  <strong>{{ channel.value | currency:'INR':'symbol':'1.0-0' }}</strong>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill purchase-fill" [style.width.%]="channel.percent"></div>
+                </div>
+                <span class="channel-percent">{{ channel.percent }}%</span>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="empty-state">No purchase payment data for this period.</div>
+        }
+      </section>
+    </div>
+
+    <section class="panel stock-panel">
+      <div class="panel-heading stock-heading">
+        <div>
+          <div class="panel-title-row">
+            <h2>Low stock watchlist</h2>
+            @if (lowStockTotal() > 0) { <span class="count-badge">{{ lowStockTotal() }} items</span> }
+          </div>
+          <p>Products where current quantity is at or below minimum stock</p>
+        </div>
+        <span class="panel-icon warning-panel-icon"><app-icon name="warehouse" [size]="18" /></span>
+      </div>
+
+      @if (lowStockError()) {
+        <div class="inline-error">{{ lowStockError() }}</div>
+      } @else if (lowStockItems().length) {
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>PRODUCT</th>
+                <th>PART NUMBER</th>
+                <th class="number-cell">AVAILABLE</th>
+                <th class="number-cell">MINIMUM</th>
+                <th>STATUS</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of lowStockItems(); track item.productUuid) {
+                <tr>
+                  <td>
+                    <div class="product-cell">
+                      <span class="product-avatar"><app-icon name="package" [size]="16" /></span>
+                      <span><strong>{{ item.productName }}</strong><small>{{ item.productCode }}</small></span>
+                    </div>
+                  </td>
+                  <td class="part-number">{{ item.partNo || '—' }}</td>
+                  <td class="number-cell quantity-value">{{ item.quantity | number:'1.0-2' }} {{ item.unit }}</td>
+                  <td class="number-cell">{{ item.minimumStock | number:'1.0-2' }} {{ item.unit }}</td>
+                  <td><span class="stock-status"><span></span> Low stock</span></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <div class="empty-stock">
+          <span class="empty-stock-icon"><app-icon name="check-circle" [size]="22" /></span>
+          <strong>Stock levels look good</strong>
+          <span>No low-stock products were returned for the current inventory.</span>
+        </div>
+      }
+      <div class="panel-footnote">Showing up to 6 items · Inventory quantities are current, not date-filtered.</div>
+    </section>
+
+    <footer class="dashboard-footnote">
+      <span>Figures are calculated by the ERP backend for the selected business-date range.</span>
+      <span>Currency: INR</span>
+    </footer>
+  }
+</section>

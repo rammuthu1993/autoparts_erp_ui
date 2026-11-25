@@ -1,0 +1,134 @@
+<section class="master-page">
+  <div class="page-heading">
+    <div>
+      <div class="eyebrow">MASTER DATA</div>
+      <h1>{{ config().title }}</h1>
+      <p>Manage your {{ config().title.toLowerCase() }} and keep business records accurate.</p>
+    </div>
+    @if (canCreate()) {
+      <button class="primary-button" type="button" (click)="openCreate()">＋ Add {{ config().singular }}</button>
+    }
+  </div>
+
+  <div class="toolbar">
+    <div class="search-box">
+      <span>⌕</span>
+      <input #searchInput type="search" [value]="search()" placeholder="Search {{ config().title.toLowerCase() }}..."
+        (input)="onSearch(searchInput.value)" />
+    </div>
+    <div class="record-count">{{ totalElements() }} records</div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            @for (column of config().columns; track column.key) {
+              <th>{{ column.label }}</th>
+            }
+            @if (canUpdate() || canDeactivate()) { <th class="actions-heading">Actions</th> }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track trackByUuid($index, row)) {
+            <tr>
+              @for (column of config().columns; track column.key) {
+                <td>
+                  @if (column.key === 'active') {
+                    <span class="status-pill" [class.inactive]="row.active !== true">{{ display(row, column.key) }}</span>
+                  } @else {
+                    <span [class.primary-cell]="column.key === 'name' || column.key === 'customerName' || column.key === 'supplierName'">
+                      {{ display(row, column.key) }}
+                    </span>
+                  }
+                </td>
+              }
+              @if (canUpdate() || canDeactivate()) {
+                <td class="row-actions">
+                  @if (row.uuid) {
+                    @if (canUpdate()) { <button class="text-button" type="button" (click)="openEdit(row)">Edit</button> }
+                    @if (canDeactivate() && row.active !== false) {
+                      <button class="text-button danger-text" type="button" (click)="deactivate(row)">Deactivate</button>
+                    }
+                  } @else {
+                    <span class="unavailable-action">Unavailable</span>
+                  }
+                </td>
+              }
+            </tr>
+          } @empty {
+            <tr>
+              <td class="empty-cell" [attr.colspan]="config().columns.length + (canUpdate() || canDeactivate() ? 1 : 0)">
+                <div class="empty-state">
+                  <span class="empty-icon">▤</span>
+                  <strong>No {{ config().title.toLowerCase() }} found</strong>
+                  <span>Try another search or add your first {{ config().singular.toLowerCase() }}.</span>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="table-footer">
+      <span>Showing {{ rows().length }} of {{ totalElements() }}</span>
+      <div class="pagination">
+        <button type="button" (click)="changePage(-1)" [disabled]="page() === 0">Previous</button>
+        <span>Page {{ totalPages() === 0 ? 0 : page() + 1 }} of {{ totalPages() }}</span>
+        <button type="button" (click)="changePage(1)" [disabled]="page() + 1 >= totalPages()">Next</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+@if (showForm()) {
+  <div class="modal-backdrop" (click)="closeForm()">
+    <section class="form-modal" role="dialog" aria-modal="true" [attr.aria-label]="(editingUuid() ? 'Edit ' : 'Add ') + config().singular"
+      (click)="$event.stopPropagation()">
+      <header class="modal-header">
+        <div>
+          <div class="eyebrow">{{ editingUuid() ? 'UPDATE MASTER' : 'NEW MASTER' }}</div>
+          <h2>{{ editingUuid() ? 'Edit ' : 'Add ' }}{{ config().singular }}</h2>
+        </div>
+        <button class="close-button" type="button" (click)="closeForm()" aria-label="Close">×</button>
+      </header>
+      <form [formGroup]="form" (ngSubmit)="save()">
+        <div class="form-grid">
+          @for (field of fields(); track field.key) {
+            <label class="form-field" [class.full-width]="field.type === 'textarea'">
+              <span>{{ field.label }} @if (field.required) { <em>*</em> }</span>
+              @if (field.type === 'textarea') {
+                <textarea [formControlName]="field.key" rows="3" [placeholder]="field.placeholder ?? ''"></textarea>
+              } @else if (field.type === 'select') {
+                <select [formControlName]="field.key">
+                  <option [ngValue]="null">Select {{ field.label }}</option>
+                  @for (option of field.options ?? []; track option.id) {
+                    <option [ngValue]="option.id">{{ option.name }}</option>
+                  }
+                </select>
+              } @else {
+                <input [type]="field.type ?? 'text'" [formControlName]="field.key"
+                  [min]="field.min ?? null" [step]="field.step ?? null"
+                  [placeholder]="field.placeholder ?? ''" />
+              }
+              @if (form.controls[field.key].touched && form.controls[field.key].invalid) {
+                <small class="field-error">
+                  @if (form.controls[field.key].hasError('required')) { {{ field.label }} is required. }
+                  @else if (form.controls[field.key].hasError('email')) { Enter a valid email address. }
+                  @else if (form.controls[field.key].hasError('min')) { Value must be {{ field.min }} or greater. }
+                </small>
+              }
+            </label>
+          }
+        </div>
+        <footer class="modal-footer">
+          <button class="secondary-button" type="button" (click)="closeForm()" [disabled]="submitting()">Cancel</button>
+          <button class="primary-button" type="submit" [disabled]="submitting()">
+            {{ submitting() ? 'Saving...' : (editingUuid() ? 'Save changes' : 'Create ' + config().singular) }}
+          </button>
+        </footer>
+      </form>
+    </section>
+  </div>
+}

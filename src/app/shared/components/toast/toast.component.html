@@ -1,0 +1,22 @@
+<div class="toast-region" aria-label="Notifications" aria-live="polite" aria-relevant="additions">
+  @for (item of toast.messages(); track item.id) {
+    <section class="toast-card" [class.toast-success]="item.type === 'success'"
+      [class.toast-error]="item.type === 'error'" [class.toast-info]="item.type === 'info'"
+      [class.toast-warning]="item.type === 'warning'" role="status">
+      <span class="toast-symbol" aria-hidden="true">
+        @switch (item.type) {
+          @case ('success') { ✓ }
+          @case ('error') { ! }
+          @case ('warning') { ! }
+          @default { i }
+        }
+      </span>
+      <div class="toast-copy">
+        <strong>{{ item.title }}</strong>
+        <p>{{ item.message }}</p>
+      </div>
+      <button type="button" class="toast-close" (click)="dismiss(item.id)" aria-label="Dismiss notification">×</button>
+      <span class="toast-progress" [class.progress-error]="item.type === 'error'"></span>
+    </section>
+  }
+</div>
