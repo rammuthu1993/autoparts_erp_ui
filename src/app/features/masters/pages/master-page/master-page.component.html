@@ -99,6 +99,7 @@
       <form [formGroup]="form" (ngSubmit)="save()">
         <div class="form-grid">
           @for (field of fields(); track field.key) {
+            @if ((field.key !== 'taxRateUuid' && field.key !== 'hsnCode') || !editingUuid()) {
             <label class="form-field" [class.full-width]="field.type === 'textarea'">
               <span>{{ field.label }} @if (field.required) { <em>*</em> }</span>
               @if (field.type === 'textarea') {
@@ -123,6 +124,7 @@
                 </small>
               }
             </label>
+            }
           }
         </div>
         <footer class="modal-footer">

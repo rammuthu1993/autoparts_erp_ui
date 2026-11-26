@@ -3,7 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { API_BASE_URL } from '../../../core/http/api/api-config';
 import {
-  CustomerLookup, PageResponse, ProductLookup, SaleCreateRequest, SalePaymentRequest, SaleResponse
+  CustomerLookup, PageResponse, ProductLookup, SaleCreateRequest, SalePaymentRequest, SaleResponse, SalesStatusOption
 } from '../models/sales.model';
 
 @Injectable({ providedIn: 'root' })
@@ -21,6 +21,14 @@ export class SalesService {
     return this.http.get<PageResponse<SaleResponse>>(`${this.base}/sales/paged`, { params });
   }
 
+  statusOptions(): Observable<SalesStatusOption[]> {
+    return this.http.get<SalesStatusOption[]>(`${this.base}/sales/status-options`);
+  }
+
+  paymentStatusOptions(): Observable<SalesStatusOption[]> {
+    return this.http.get<SalesStatusOption[]>(`${this.base}/sales/payment-status-options`);
+  }
+
   get(uuid: string): Observable<SaleResponse> {
     return this.http.get<SaleResponse>(`${this.base}/sales/${uuid}`);
   }
@@ -33,8 +41,8 @@ export class SalesService {
     return this.http.post<SaleResponse>(`${this.base}/sales/${uuid}/complete`, {});
   }
 
-  cancel(uuid: string): Observable<SaleResponse> {
-    return this.http.post<SaleResponse>(`${this.base}/sales/${uuid}/cancel`, {});
+  cancel(uuid: string, reason: string): Observable<SaleResponse> {
+    return this.http.post<SaleResponse>(`${this.base}/sales/${uuid}/cancel`, { reason });
   }
 
   recordPayment(uuid: string, request: SalePaymentRequest): Observable<SaleResponse> {

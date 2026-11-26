@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { finalize, map, switchMap } from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+import { API_BASE_URL } from '../../../../core/http/api/api-config';
 import { AuthStateService } from '../../../../core/auth/services/auth-state.service';
 import { ToastService } from '../../../../core/notifications/toast.service';
 import { MastersService } from '../../services/masters.service';
@@ -51,6 +53,7 @@ export class MasterPageComponent implements OnInit {
   private readonly service = inject(MastersService);
   private readonly authState = inject(AuthStateService);
   private readonly toast = inject(ToastService);
+  private readonly http = inject(HttpClient);
 
   readonly config = signal<MasterConfig>(this.buildConfig('products'));
   readonly rows = signal<MasterRecord[]>([]);
@@ -66,9 +69,11 @@ export class MasterPageComponent implements OnInit {
   readonly selectedBarcode = signal<ProductBarcodeView | null>(null);
   readonly categoryOptions = signal<MasterOption[]>([]);
   readonly brandOptions = signal<MasterOption[]>([]);
+  readonly taxRateOptions = signal<MasterOption[]>([]);
   readonly fields = computed(() => this.config().fields.map(field => {
     if (field.key === 'categoryId') return { ...field, options: this.categoryOptions() };
     if (field.key === 'brandId') return { ...field, options: this.brandOptions() };
+    if (field.key === 'taxRateUuid') return { ...field, options: this.taxRateOptions() };
     return field;
   }));
   readonly canCreate = computed(() => this.authState.hasPermission(this.config().create));
@@ -123,7 +128,9 @@ export class MasterPageComponent implements OnInit {
           { key: 'purchasePrice', label: 'Purchase price', type: 'number', required: true, min: 0, step: '0.01' },
           { key: 'sellingPrice', label: 'Selling price', type: 'number', required: true, min: 0, step: '0.01' },
           { key: 'minimumStock', label: 'Minimum stock', type: 'number', required: true, min: 0, step: '0.001' },
-          { ...commonText('unit', 'Unit', true), maxLength: 20 }
+          { ...commonText('unit', 'Unit', true), maxLength: 20 },
+          { key: 'taxRateUuid', label: 'GST rate', type: 'select', options: [] },
+          { ...commonText('hsnCode', 'HSN code'), maxLength: 20, pattern: '^[0-9A-Za-z]*$' }
         ]
       },
       categories: {
@@ -186,6 +193,20 @@ export class MasterPageComponent implements OnInit {
     this.service.lookup<{ id: number; name: string }>('categories').subscribe({
       next: response => this.categoryOptions.set((response.content ?? []).map(item => ({ id: item.id, name: item.name }))),
       error: () => this.categoryOptions.set([])
+    });
+    this.http.get<any[]>(`${API_BASE_URL}/api/v1/tax-rates/current`).subscribe({
+      next: rates => {
+        const options = (rates ?? []).map(rate => ({
+          id: rate.uuid,
+          name: `${rate.taxName} (${Number(rate.gstRate).toFixed(2)}%)`
+        }));
+        this.taxRateOptions.set(options);
+        const defaultRate = options.find(option => option.name.includes('18.00%'));
+        if (defaultRate && !this.form.get('taxRateUuid')?.value) {
+          this.form.get('taxRateUuid')?.setValue(defaultRate.id);
+        }
+      },
+      error: () => this.taxRateOptions.set([])
     });
     this.service.lookup<{ id: number; name: string }>('brands').subscribe({
       next: response => this.brandOptions.set((response.content ?? []).map(item => ({ id: item.id, name: item.name }))),
@@ -292,6 +313,10 @@ export class MasterPageComponent implements OnInit {
     if (!this.canCreate()) return;
     this.editingUuid.set(null);
     this.form.reset();
+    if (this.config().type === 'products') {
+      const defaultRate = this.taxRateOptions().find(option => option.name.includes('18.00%'));
+      this.form.patchValue({ taxRateUuid: defaultRate?.id ?? null, hsnCode: null });
+    }
     this.showForm.set(true);
   }
 
@@ -320,6 +345,10 @@ export class MasterPageComponent implements OnInit {
       return;
     }
     const payload = this.form.getRawValue();
+    if (this.config().type === 'products' && this.editingUuid()) {
+      delete payload['taxRateUuid'];
+      delete payload['hsnCode'];
+    }
     this.submitting.set(true);
     const uuid = this.editingUuid();
     const request = uuid

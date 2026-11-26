@@ -8,7 +8,7 @@ export interface PageResponse<T> {
   last: boolean;
 }
 
-export interface MasterOption { id: number; name: string; }
+export interface MasterOption { id: number | string; name: string; }
 export type MasterType = 'products' | 'categories' | 'brands' | 'customers' | 'suppliers';
 
 export interface MasterField {

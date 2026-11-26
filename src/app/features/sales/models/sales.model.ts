@@ -10,8 +10,10 @@ export interface PageResponse<T> {
 
 export type SupplyType = 'INTRA_STATE' | 'INTER_STATE';
 export type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK' | 'CREDIT';
-export type SalesStatus = 'DRAFT' | 'COMPLETED' | 'CANCELLED';
-export type SalesPaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
+export type SalesStatus = string;
+export type SalesPaymentStatus = string;
+
+export interface SalesStatusOption { code: string; label: string; sortOrder: number; }
 
 export interface SaleProductRequest {
   productUuid: string;
@@ -78,11 +80,13 @@ export interface SaleResponse {
   igstAmount: number;
   totalTaxAmount: number;
   grandTotal: number;
+  roundOffAmount: number;
   paidAmount: number;
   balanceAmount: number;
   status: SalesStatus;
-  paymentStatus: SalesPaymentStatus;
+  paymentStatus: SalesPaymentStatus | null;
   notes?: string;
+  cancellationReason?: string | null;
   products: SaleProductResponse[];
   payments: SalePaymentResponse[];
   createdAt: string;
@@ -96,6 +100,15 @@ export interface ProductLookup {
   sellingPrice: number;
   unit: string;
   active: boolean;
+  taxRateUuid?: string | null;
+  taxName?: string | null;
+  hsnCode?: string | null;
+  gstRate?: number | null;
+  cgstRate?: number | null;
+  sgstRate?: number | null;
+  igstRate?: number | null;
+  taxEffectiveFrom?: string | null;
+  taxEffectiveTo?: string | null;
 }
 export interface CustomerLookup {
   uuid: string;
