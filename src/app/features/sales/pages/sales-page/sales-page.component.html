@@ -1,0 +1,274 @@
+<section class="sales-page">
+  <header class="page-heading">
+    <div>
+      <div class="eyebrow">SALES MANAGEMENT</div>
+      <h1>Sales invoices</h1>
+      <p>Create sales drafts, complete invoices and track customer payments.</p>
+    </div>
+    @if (canCreate()) {
+    <button class="primary-button" type="button" (click)="openCreate()">＋ New sale</button>
+    }
+  </header>
+
+  <div class="filter-card">
+    <label class="search-field">
+      <span>Search invoices</span>
+      <input type="search" [value]="search()" (input)="search.set($any($event.target).value)"
+        (keyup.enter)="applyFilters()" placeholder="Invoice number, customer..." />
+    </label>
+    <label class="filter-field">
+      <span>Invoice status</span>
+      <select [value]="statusFilter()" (change)="statusFilter.set($any($event.target).value); applyFilters()">
+        <option value="">All statuses</option>
+        <option value="DRAFT">Draft</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+    </label>
+    <label class="filter-field">
+      <span>Payment status</span>
+      <select [value]="paymentFilter()" (change)="paymentFilter.set($any($event.target).value); applyFilters()">
+        <option value="">All payments</option>
+        <option value="UNPAID">Unpaid</option>
+        <option value="PARTIALLY_PAID">Partially paid</option>
+        <option value="PAID">Paid</option>
+      </select>
+    </label>
+    <button class="secondary-button filter-button" type="button" (click)="applyFilters()">Apply filters</button>
+  </div>
+
+  <div class="table-card">
+    <div class="table-heading">
+      <strong>Invoice register</strong><span>{{ totalElements() }} records</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice</th>
+            <th>Date</th>
+            <th>Customer</th>
+            <th class="numeric">Grand total</th>
+            <th class="numeric">Paid</th>
+            <th class="numeric">Balance</th>
+            <th>Status</th>
+            <th>Payment</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (sale of rows(); track trackSale($index, sale)) {
+          <tr>
+            <td class="invoice-cell">{{ sale.invoiceNumber }}</td>
+            <td>{{ sale.saleDate | date:'dd MMM yyyy' }}</td>
+            <td>{{ sale.customerName || 'Walk-in customer' }}</td>
+            <td class="numeric amount">{{ money(sale.grandTotal) }}</td>
+            <td class="numeric">{{ money(sale.paidAmount) }}</td>
+            <td class="numeric" [class.balance-due]="sale.balanceAmount > 0">{{ money(sale.balanceAmount) }}</td>
+            <td><span class="status-pill" [class.draft]="sale.status === 'DRAFT'"
+                [class.cancelled]="sale.status === 'CANCELLED'">{{ statusLabel(sale.status) }}</span></td>
+            <td><span class="payment-pill" [class.unpaid]="sale.paymentStatus === 'UNPAID'">{{
+                statusLabel(sale.paymentStatus) }}</span></td>
+            <td class="row-actions"><button class="text-button" type="button"
+                (click)="openDetails(sale.uuid)">View</button></td>
+          </tr>
+          } @empty {
+          @if (!loading()) {
+          <tr>
+            <td colspan="9" class="empty-cell">
+              <div class="empty-state"><strong>No sales invoices found</strong><span>Create a sale to start your invoice
+                  register.</span></div>
+            </td>
+          </tr>
+          }
+          }
+        </tbody>
+      </table>
+    </div>
+    <footer class="table-footer">
+      <span>Showing {{ rows().length }} of {{ totalElements() }}</span>
+      <div class="pagination">
+        <button type="button" (click)="changePage(-1)" [disabled]="page() === 0">Previous</button>
+        <span>Page {{ totalPages() ? page() + 1 : 0 }} of {{ totalPages() }}</span>
+        <button type="button" (click)="changePage(1)" [disabled]="page() + 1 >= totalPages()">Next</button>
+      </div>
+    </footer>
+  </div>
+</section>
+
+@if (showCreate()) {
+<div class="modal-backdrop" (click)="closeCreate()">
+  <section class="modal create-modal" role="dialog" aria-modal="true" aria-label="Create sales invoice"
+    (click)="$event.stopPropagation()">
+    <header class="modal-header">
+      <div>
+        <div class="eyebrow">NEW TRANSACTION</div>
+        <h2>Create sales draft</h2>
+      </div>
+      <button class="close-button" type="button" (click)="closeCreate()">×</button>
+    </header>
+    <form [formGroup]="form" (ngSubmit)="createSale()">
+      <div class="form-grid">
+        <label class="form-field"><span>Sale date *</span><input type="date" formControlName="saleDate"></label>
+        <label class="form-field"><span>Customer</span>
+          <select formControlName="customerUuid">
+            <option value="">Walk-in customer</option>
+            @for (customer of customers(); track customer.uuid) {
+            <option [value]="customer.uuid">{{ customer.customerName }} · {{ customer.phone || customer.customerCode }}
+            </option>
+            }
+          </select>
+        </label>
+        <label class="form-field"><span>Supply type *</span>
+          <select formControlName="supplyType">
+            <option value="INTRA_STATE">Intra-state (CGST + SGST)</option>
+            <option value="INTER_STATE">Inter-state (IGST)</option>
+          </select>
+        </label>
+        <label class="form-field full-width"><span>Notes</span><textarea rows="2" formControlName="notes"
+            placeholder="Optional notes"></textarea></label>
+      </div>
+      <div class="line-heading">
+        <div><strong>Products</strong><span>Add products and quantities for this invoice.</span></div>
+        <button class="secondary-button" type="button" (click)="addLine()">＋ Add item</button>
+      </div>
+      <div class="product-lines" formArrayName="products">
+        @for (line of productLines.controls; track $index; let i = $index) {
+        <div class="product-line" [formGroupName]="i">
+          <label class="form-field product-select"><span>Product *</span>
+            <select formControlName="productUuid" (change)="onProductSelected(i)">
+              <option value="">Select product</option>
+              @for (product of products(); track product.uuid) {
+              <option [value]="product.uuid">{{ product.productCode }} · {{ product.partNo }} · {{ product.name }}
+              </option>
+              }
+            </select>
+          </label>
+          <label class="form-field"><span>Qty *</span><input type="number" min="0.001" step="0.001"
+              formControlName="quantity"></label>
+          <label class="form-field"><span>Unit price (₹) *</span><input type="number" min="0" step="0.01"
+              formControlName="unitPrice"></label>
+          <label class="form-field"><span>Discount (₹)</span><input type="number" min="0" step="0.01"
+              formControlName="discountAmount"></label>
+          <button class="remove-line" type="button" (click)="removeLine(i)" [disabled]="productLines.length === 1"
+            aria-label="Remove product">×</button>
+        </div>
+        }
+      </div>
+      <p class="tax-note">GST is calculated by the backend using the product tax mapping effective on the sale date.
+        Stock is deducted only when you complete the invoice.</p>
+      <footer class="modal-footer">
+        <button class="secondary-button" type="button" (click)="closeCreate()" [disabled]="saving()">Cancel</button>
+        <button class="primary-button" type="submit" [disabled]="saving()">{{ saving() ? 'Creating...' : 'Create draft'
+          }}</button>
+      </footer>
+    </form>
+  </section>
+</div>
+}
+
+@if (selectedSale(); as sale) {
+<div class="modal-backdrop" (click)="closeDetails()">
+  <section class="modal details-modal" role="dialog" aria-modal="true" aria-label="Sales invoice details"
+    (click)="$event.stopPropagation()">
+    <header class="modal-header">
+      <div>
+        <div class="eyebrow">SALES INVOICE</div>
+        <h2>{{ sale.invoiceNumber }}</h2>
+        <p>{{ sale.customerName || 'Walk-in customer' }} · {{ sale.saleDate | date:'dd MMM yyyy' }}</p>
+      </div>
+      <button class="close-button" type="button" (click)="closeDetails()">×</button>
+    </header>
+    <div class="summary-grid">
+      <div><span>Grand total</span><strong>{{ money(sale.grandTotal) }}</strong></div>
+      <div><span>Paid</span><strong>{{ money(sale.paidAmount) }}</strong></div>
+      <div><span>Balance</span><strong [class.balance-due]="sale.balanceAmount > 0">{{ money(sale.balanceAmount)
+          }}</strong></div>
+    </div>
+    <h3>Invoice items</h3>
+    <div class="table-scroll detail-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Unit price</th>
+            <th>Tax</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>@for (item of sale.products; track item.uuid) {
+          <tr>
+            <td><strong>{{ item.productName }}</strong><small>{{ item.productCode }} · HSN {{ item.hsnCode }}</small>
+            </td>
+            <td>{{ item.quantity }} {{ item.unit }}</td>
+            <td>{{ money(item.unitPrice) }}</td>
+            <td>{{ money(item.totalTaxAmount) }}</td>
+            <td>{{ money(item.lineTotal) }}</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="totals">
+      <div><span>Subtotal</span><strong>{{ money(sale.subtotal) }}</strong></div>
+      <div><span>Discount</span><strong>{{ money(sale.discountAmount) }}</strong></div>
+      <div><span>CGST</span><strong>{{ money(sale.cgstAmount) }}</strong></div>
+      <div><span>SGST</span><strong>{{ money(sale.sgstAmount) }}</strong></div>
+      <div><span>IGST</span><strong>{{ money(sale.igstAmount) }}</strong></div>
+      <div class="grand-total"><span>Grand total</span><strong>{{ money(sale.grandTotal) }}</strong></div>
+    </div>
+    <h3>Payments</h3>
+    @if (sale.payments.length) {
+    <div class="payment-list">@for (payment of sale.payments; track payment.uuid) {
+      <div><span>{{ payment.paymentMethod }} · {{ payment.paymentDate | date:'dd MMM, hh:mm a' }}</span><strong>{{
+          money(payment.amount) }}</strong></div>
+      }
+    </div>
+    } @else { <p class="muted">No payments recorded.</p> }
+    <footer class="modal-footer action-footer">
+      @if (sale.status === 'DRAFT' && canComplete()) { <button class="primary-button" type="button"
+        (click)="completeSale(sale)">Complete invoice</button> }
+      @if (sale.status === 'DRAFT' && canCancel()) { <button class="danger-button" type="button"
+        (click)="cancelSale(sale)">Cancel draft</button> }
+      @if (sale.status === 'COMPLETED' && sale.balanceAmount > 0 && canPay()) { <button class="primary-button"
+        type="button" (click)="openPayment(sale)">Record payment</button> }
+      <button class="secondary-button" type="button" (click)="closeDetails()">Close</button>
+    </footer>
+  </section>
+</div>
+}
+
+@if (showPayment() && selectedSale(); as sale) {
+<div class="modal-backdrop nested-backdrop" (click)="closePayment()">
+  <section class="modal payment-modal" role="dialog" aria-modal="true" aria-label="Record sales payment"
+    (click)="$event.stopPropagation()">
+    <header class="modal-header">
+      <div>
+        <div class="eyebrow">PAYMENT COLLECTION</div>
+        <h2>Record payment</h2>
+        <p>{{ sale.invoiceNumber }} · Outstanding {{ money(sale.balanceAmount) }}</p>
+      </div>
+      <button class="close-button" type="button" (click)="closePayment()">×</button>
+    </header>
+    <form [formGroup]="paymentForm" (ngSubmit)="recordPayment()">
+      <div class="form-grid">
+        <label class="form-field"><span>Payment method *</span><select formControlName="paymentMethod">
+            @for (method of paymentMethods; track method) { <option [value]="method">{{ method }}</option> }
+          </select></label>
+        <label class="form-field"><span>Amount (₹) *</span><input type="number" min="0.01" step="0.01"
+            formControlName="amount"></label>
+        <label class="form-field full-width"><span>Reference number</span><input formControlName="referenceNumber"
+            placeholder="UPI / bank reference"></label>
+        <label class="form-field full-width"><span>Notes</span><textarea rows="2"
+            formControlName="notes"></textarea></label>
+      </div>
+      <footer class="modal-footer"><button class="secondary-button" type="button"
+          (click)="closePayment()">Cancel</button>
+        <button class="primary-button" type="submit" [disabled]="paymentSaving()">{{ paymentSaving() ? 'Saving...' :
+          'Record payment' }}</button>
+      </footer>
+    </form>
+  </section>
+</div>
+}

@@ -27,7 +27,7 @@
             @for (column of config().columns; track column.key) {
               <th>{{ column.label }}</th>
             }
-            @if (canUpdate() || canDeactivate()) { <th class="actions-heading">Actions</th> }
+            @if (config().type === 'products' || canUpdate() || canDeactivate()) { <th class="actions-heading">Actions</th> }
           </tr>
         </thead>
         <tbody>
@@ -44,8 +44,11 @@
                   }
                 </td>
               }
-              @if (canUpdate() || canDeactivate()) {
+              @if (config().type === 'products' || canUpdate() || canDeactivate()) {
                 <td class="row-actions">
+                  @if (config().type === 'products' && row.uuid) {
+                    <button class="text-button" type="button" (click)="openBarcode(row)">Barcode</button>
+                  }
                   @if (row.uuid) {
                     @if (canUpdate()) { <button class="text-button" type="button" (click)="openEdit(row)">Edit</button> }
                     @if (canDeactivate() && row.active !== false) {
@@ -59,7 +62,7 @@
             </tr>
           } @empty {
             <tr>
-              <td class="empty-cell" [attr.colspan]="config().columns.length + (canUpdate() || canDeactivate() ? 1 : 0)">
+              <td class="empty-cell" [attr.colspan]="config().columns.length + (config().type === 'products' || canUpdate() || canDeactivate() ? 1 : 0)">
                 <div class="empty-state">
                   <span class="empty-icon">▤</span>
                   <strong>No {{ config().title.toLowerCase() }} found</strong>
@@ -129,6 +132,33 @@
           </button>
         </footer>
       </form>
+    </section>
+  </div>
+}
+
+@if (barcodeLoading()) {
+  <div class="barcode-loading" role="status" aria-live="polite">Loading product barcode…</div>
+}
+
+@if (selectedBarcode(); as barcode) {
+  <div class="modal-backdrop" (click)="closeBarcode()">
+    <section class="barcode-modal" role="dialog" aria-modal="true" aria-label="Product barcode" (click)="$event.stopPropagation()">
+      <header class="modal-header">
+        <div><div class="eyebrow">PRODUCT IDENTIFICATION</div><h2>Barcode</h2></div>
+        <button class="close-button" type="button" (click)="closeBarcode()" aria-label="Close barcode">×</button>
+      </header>
+      <div class="barcode-preview">
+        <strong>{{ barcode.productName }}</strong>
+        <span class="barcode-product-code">{{ barcode.productCode }}</span>
+        <img [src]="barcode.imageUrl" [alt]="'Barcode for ' + barcode.productName" />
+        <span class="barcode-value">{{ barcode.barcode }}</span>
+        <span class="barcode-type">{{ barcode.barcodeType }} · SCANNER-READABLE</span>
+      </div>
+      <footer class="modal-footer">
+        <button class="secondary-button" type="button" (click)="closeBarcode()">Close</button>
+        <button class="secondary-button" type="button" (click)="downloadBarcode()">Download PNG</button>
+        <button class="primary-button" type="button" (click)="printBarcode()">Print barcode</button>
+      </footer>
     </section>
   </div>
 }

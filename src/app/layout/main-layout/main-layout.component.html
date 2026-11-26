@@ -1,4 +1,5 @@
 <div class="erp-shell">
+  @if (navigating()) { <div class="route-progress" aria-label="Loading page"><span></span></div> }
   <aside class="sidebar" [class.mobile-expanded]="mobileExpanded()" aria-label="Main navigation">
     <div class="sidebar-brand">
       <div class="brand-mark">AP</div>

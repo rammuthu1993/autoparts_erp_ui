@@ -1,0 +1,134 @@
+<section class="assistant-shell">
+  <header class="assistant-header">
+    <div class="brand">
+      <div class="brand-icon">✦</div>
+      <div><span class="eyebrow">AUTOPARTS ERP</span><h1>AI Assistant</h1></div>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="header-button history-toggle" (click)="toggleHistory()">
+        <span>☷</span> {{ historyOpen() ? 'Hide history' : 'History' }}
+      </button>
+      <button type="button" class="header-button new-chat" (click)="newConversation()">
+        <span>＋</span> New chat
+      </button>
+    </div>
+  </header>
+
+  @if (historyOpen()) {
+    <button class="history-backdrop" type="button" aria-label="Close history" (click)="toggleHistory()"></button>
+    <aside class="history-drawer">
+      <div class="drawer-heading">
+        <div><strong>Chat history</strong><small>{{ totalConversations() }} conversations</small></div>
+        <button type="button" class="close-drawer" (click)="toggleHistory()" aria-label="Close history">×</button>
+      </div>
+      @if (loadingHistory()) {
+        <div class="history-empty">Loading conversations…</div>
+      } @else if (conversations().length === 0) {
+        <div class="history-empty">No conversations yet. Start a new chat to begin.</div>
+      } @else {
+        <div class="history-list">
+          @for (conversation of conversations(); track conversation.id) {
+            <div class="history-item" [class.active]="activeConversationId() === conversation.id">
+              <button type="button" class="history-open" (click)="openConversation(conversation)">
+                <strong>{{ conversation.title || 'New conversation' }}</strong>
+                <small>{{ conversation.updatedAt | date:'dd MMM yyyy, h:mm a' }}</small>
+              </button>
+              <div class="history-item-actions">
+                <button type="button" (click)="renameConversation(conversation, $event)">Rename</button>
+                <button type="button" (click)="archiveConversation(conversation, $event)">Archive</button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+      <div class="drawer-pagination">
+        <button type="button" (click)="previousPage()" [disabled]="page() === 0">Previous</button>
+        <span>{{ totalPages() === 0 ? 0 : page() + 1 }} / {{ totalPages() }}</span>
+        <button type="button" (click)="nextPage()" [disabled]="page() + 1 >= totalPages()">Next</button>
+      </div>
+    </aside>
+  }
+
+  <main class="chat-workspace">
+    <div class="chat-topline">
+      <div class="assistant-presence"><span class="presence-dot"></span> ERP assistant ready</div>
+      <span class="read-only-pill">READ-ONLY ACCESS</span>
+    </div>
+
+    <div class="conversation-canvas">
+      @if (loadingMessages()) {
+        <div class="center-state"><span class="loader"></span><strong>Loading conversation…</strong></div>
+      } @else if (messages().length === 0) {
+        <div class="welcome">
+          <div class="welcome-mark">✦</div>
+          <p class="welcome-kicker">YOUR BUSINESS, IN PLAIN LANGUAGE</p>
+          <h2>What would you like to know?</h2>
+          <p class="welcome-description">Ask questions about your inventory, sales, purchases, customers, suppliers and business performance. The assistant uses information your account is permitted to access.</p>
+          <div class="prompt-grid">
+            @for (suggestion of suggestions; track suggestion) {
+              <button type="button" class="prompt-card" (click)="useSuggestion(suggestion)">
+                <span>{{ suggestion }}</span><b>↗</b>
+              </button>
+            }
+          </div>
+        </div>
+      } @else {
+        <div class="messages">
+          @for (message of messages(); track trackMessage($index, message)) {
+            <article class="message" [class.from-user]="message.role === 'USER'">
+              <div class="message-avatar">{{ message.role === 'USER' ? 'YOU' : '✦' }}</div>
+              <div class="message-body">
+                <div class="message-byline">
+                  <strong>{{ message.role === 'USER' ? 'You' : 'AutoParts AI' }}</strong>
+                  <time>{{ message.createdAt | date:'h:mm a' }}</time>
+                </div>
+                <div class="message-text">{{ message.content }}</div>
+              </div>
+            </article>
+          }
+          @if (sending()) {
+            <article class="message">
+              <div class="message-avatar">✦</div>
+              <div class="message-body">
+                <div class="message-byline"><strong>AutoParts AI</strong><span>Working on your question…</span></div>
+                <div class="typing"><i></i><i></i><i></i></div>
+              </div>
+            </article>
+          }
+        </div>
+      }
+    </div>
+
+    @if (errorMessage()) {
+      <div class="error-message" role="alert">
+        <span>{{ errorMessage() }}</span><button type="button" (click)="errorMessage.set('')">Dismiss</button>
+      </div>
+    }
+
+    <footer class="composer-area">
+      <div class="composer">
+        <textarea
+          aria-label="Message to AI Assistant"
+          rows="2"
+          maxlength="8000"
+          [ngModel]="draft()"
+          (ngModelChange)="draft.set($event)"
+          (keydown)="onComposerKeydown($event)"
+          placeholder="Message AutoParts AI…"></textarea>
+        @if (sending()) {
+          <button type="button" class="send-control stop" (click)="cancelGeneration()" [disabled]="cancelling()">
+            {{ cancelling() ? 'Stopping…' : 'Stop' }}
+          </button>
+        } @else {
+          <button type="button" class="send-control" (click)="sendMessage()" [disabled]="!draft().trim()">
+            Send <span>↑</span>
+          </button>
+        }
+      </div>
+      <div class="composer-footnote">
+        <span>Enter to send · Shift + Enter for a new line</span><span>{{ draft().length }}/8000</span>
+      </div>
+      <p class="disclaimer">AI can make mistakes. Verify important information in your ERP records. This assistant cannot modify ERP data.</p>
+    </footer>
+  </main>
+</section>

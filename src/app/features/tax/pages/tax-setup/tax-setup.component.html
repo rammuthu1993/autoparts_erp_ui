@@ -1,0 +1,122 @@
+<section class="tax-page">
+  <header class="page-heading">
+    <div><span class="eyebrow">MASTERS & ADMINISTRATION</span><h1>Tax setup</h1><p>Manage GST rates, effective periods and product-wise HSN tax classification.</p></div>
+    @if (activeTab()==='rates' && canCreateRate()) { <button class="primary" (click)="openCreateRate()">+ Add GST rate</button> }
+    @if (activeTab()==='products' && canManageMapping() && selectedProductUuid()) { <button class="primary" (click)="openMappingForm()">+ Assign GST to product</button> }
+  </header>
+
+  <div class="summary-grid">
+    <article class="summary-card"><span>Active GST slabs</span><strong>{{currentRates().length}}</strong><small>Effective today</small></article>
+    <article class="summary-card"><span>Products loaded</span><strong>{{products().length}}</strong><small>Active products in selector</small></article>
+    <article class="summary-card"><span>Administration</span><strong>{{isAdmin() ? 'Administrator' : canManageMapping() ? 'Manager' : 'View only'}}</strong><small>Based on your assigned role</small></article>
+  </div>
+
+  <nav class="tabs" aria-label="Tax setup sections">
+    <button [class.active]="activeTab()==='rates'" (click)="setTab('rates')">GST rate master</button>
+    <button [class.active]="activeTab()==='products'" (click)="setTab('products')">Product tax mapping</button>
+  </nav>
+
+  @if (activeTab()==='rates') {
+    <article class="panel">
+      <div class="panel-heading"><div><h2>GST rate master</h2><p>Rates are effective-dated. Create a new rate for a changed tax percentage rather than rewriting historical rates.</p></div>
+        <input class="search" type="search" placeholder="Search tax name" [ngModel]="search()" (ngModelChange)="setSearch($event)">
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tax name</th><th>GST</th><th>CGST</th><th>SGST</th><th>IGST</th><th>Effective from</th><th>Effective to</th><th>Status</th><th>Administration</th></tr></thead>
+        <tbody>
+          @for (r of taxRates(); track r.uuid) {
+            <tr>
+              <td><strong>{{r.taxName}}</strong></td><td>{{r.gstRate | number:'1.2-2'}}%</td><td>{{r.cgstRate | number:'1.2-2'}}%</td><td>{{r.sgstRate | number:'1.2-2'}}%</td><td>{{r.igstRate | number:'1.2-2'}}%</td>
+              <td>{{r.effectiveFrom | date:'dd MMM yyyy'}}</td><td>{{r.effectiveTo ? (r.effectiveTo | date:'dd MMM yyyy') : 'No end date'}}</td>
+              <td><span class="status" [class.inactive]="!r.active">{{r.active ? 'Active' : 'Inactive'}}</span></td>
+              <td>@if (canUpdateRate()) { <button class="text-action" (click)="openEditRate(r)">Edit status/name</button> } @else { <span class="muted">View only</span> }</td>
+            </tr>
+          } @empty { <tr><td colspan="9" class="empty">No GST rates found. Add a rate if you have administrator access.</td></tr> }
+        </tbody>
+      </table></div>
+      <div class="pagination"><span>Page {{page()+1}} of {{totalPages() || 1}}</span><div><button class="secondary" [disabled]="page()===0 || loading()" (click)="changePage(-1)">Previous</button><button class="secondary" [disabled]="page()+1>=totalPages() || loading()" (click)="changePage(1)">Next</button></div></div>
+    </article>
+    <article class="panel">
+      <div class="panel-heading"><div><h2>Currently effective GST rates</h2><p>Rates returned by the backend current-rate endpoint.</p></div></div>
+      <div class="current-rate-grid">
+        @for (r of currentRates(); track r.uuid) {
+          <div class="rate-tile"><span>{{r.taxName}}</span><strong>{{r.gstRate | number:'1.0-2'}}%</strong><small>CGST {{r.cgstRate}}% · SGST {{r.sgstRate}}% · IGST {{r.igstRate}}%</small></div>
+        } @empty { <p class="muted">No currently effective GST rates returned.</p> }
+      </div>
+    </article>
+  }
+
+  @if (activeTab()==='products') {
+    <article class="panel">
+      <div class="panel-heading"><div><h2>Product tax mapping</h2><p>Choose a product to inspect its tax history and HSN code.</p></div></div>
+      <div class="product-selector">
+        <label>Product
+          <select [ngModel]="selectedProductUuid()" (ngModelChange)="selectProduct($event)">
+            <option value="">Select a product</option>
+            @for (p of products(); track p.uuid) { <option [value]="p.uuid">{{p.productCode}} · {{p.name}}{{p.partNo ? ' · '+p.partNo : ''}}</option> }
+          </select>
+        </label>
+        <span class="muted">{{products().length}} active products available</span>
+      </div>
+    </article>
+    @if (selectedProductUuid()) {
+      <article class="panel">
+        <div class="panel-heading"><div><h2>Tax assignment history</h2><p>Existing mappings are retained as history; the backend prevents overlapping effective periods.</p></div>
+          @if (canManageMapping()) { <button class="primary" (click)="openMappingForm()">+ Assign GST</button> }
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Tax name</th><th>HSN code</th><th>GST rate</th><th>CGST</th><th>SGST</th><th>IGST</th><th>Effective from</th><th>Effective to</th></tr></thead>
+          <tbody>
+            @for (m of mappings(); track m.uuid) {
+              <tr><td><strong>{{m.taxName}}</strong></td><td>{{m.hsnCode}}</td><td>{{rateFor(m.taxRateUuid)?.gstRate ?? '—'}}%</td><td>{{rateFor(m.taxRateUuid)?.cgstRate ?? '—'}}%</td><td>{{rateFor(m.taxRateUuid)?.sgstRate ?? '—'}}%</td><td>{{rateFor(m.taxRateUuid)?.igstRate ?? '—'}}%</td><td>{{m.effectiveFrom | date:'dd MMM yyyy'}}</td><td>{{m.effectiveTo ? (m.effectiveTo | date:'dd MMM yyyy') : 'Current / open-ended'}}</td></tr>
+            } @empty { <tr><td colspan="8" class="empty">No tax mapping exists for this product.</td></tr> }
+          </tbody>
+        </table></div>
+      </article>
+    }
+  }
+
+  @if (loading()) { <div class="loading">Loading tax configuration…</div> }
+
+  @if (showRateForm()) {
+    <div class="modal-backdrop" role="presentation" (click)="closeRateForm()">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="tax-rate-modal-title" (click)="$event.stopPropagation()">
+        @if (editingRate(); as rate) {
+          <div class="modal-heading"><div><h2 id="tax-rate-modal-title">Administer GST rate</h2><p>Tax percentages are immutable after creation. You can rename or deactivate this rate.</p></div><button class="icon-close" (click)="closeRateForm()">×</button></div>
+          <label>Tax name<input maxlength="50" [ngModel]="statusForm().taxName" (ngModelChange)="updateStatusForm('taxName',$event)"></label>
+          <label class="toggle"><input type="checkbox" [ngModel]="statusForm().active" (ngModelChange)="updateStatusForm('active',$event)"> Active</label>
+          <div class="readonly-rate">GST {{rate.gstRate}}% · CGST {{rate.cgstRate}}% · SGST {{rate.sgstRate}}% · IGST {{rate.igstRate}}%</div>
+          <div class="modal-actions"><button class="secondary" (click)="closeRateForm()">Cancel</button><button class="primary" [disabled]="saving()" (click)="saveRateStatus()">Save changes</button></div>
+        } @else {
+          <div class="modal-heading"><div><h2 id="tax-rate-modal-title">Create GST rate</h2><p>Enter the statutory rate and its effective date range.</p></div><button class="icon-close" (click)="closeRateForm()">×</button></div>
+          <div class="form-grid">
+            <label class="wide">Tax name<input maxlength="50" placeholder="e.g. GST 18%" [ngModel]="rateForm().taxName" (ngModelChange)="updateRateForm('taxName',$event)"></label>
+            <label>GST rate (%)<input type="number" min="0" max="100" step="0.01" [ngModel]="rateForm().gstRate" (ngModelChange)="updateRateForm('gstRate',+$event)"></label>
+            <label>CGST (%)<input type="number" min="0" max="100" step="0.01" [ngModel]="rateForm().cgstRate" (ngModelChange)="updateRateForm('cgstRate',+$event)"></label>
+            <label>SGST (%)<input type="number" min="0" max="100" step="0.01" [ngModel]="rateForm().sgstRate" (ngModelChange)="updateRateForm('sgstRate',+$event)"></label>
+            <label>IGST (%)<input type="number" min="0" max="100" step="0.01" [ngModel]="rateForm().igstRate" (ngModelChange)="updateRateForm('igstRate',+$event)"></label>
+            <label>Effective from<input type="date" [ngModel]="rateForm().effectiveFrom" (ngModelChange)="updateRateForm('effectiveFrom',$event)"></label>
+            <label>Effective to (optional)<input type="date" [ngModel]="rateForm().effectiveTo" (ngModelChange)="updateRateForm('effectiveTo',$event)"></label>
+          </div>
+          <p class="form-hint">Validation: GST = CGST + SGST = IGST. End date must be later than start date.</p>
+          <div class="modal-actions"><button class="secondary" (click)="closeRateForm()">Cancel</button><button class="primary" [disabled]="saving() || !canCreateRate()" (click)="saveRate()">Create rate</button></div>
+        }
+      </section>
+    </div>
+  }
+
+  @if (showMappingForm()) {
+    <div class="modal-backdrop" role="presentation" (click)="showMappingForm.set(false)">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="mapping-modal-title" (click)="$event.stopPropagation()">
+        <div class="modal-heading"><div><h2 id="mapping-modal-title">Assign GST to product</h2><p>Creates a new effective-dated mapping. Existing history is not overwritten.</p></div><button class="icon-close" (click)="showMappingForm.set(false)">×</button></div>
+        <label>GST rate<select [ngModel]="mappingForm().taxRateUuid" (ngModelChange)="updateMappingForm('taxRateUuid',$event)"><option value="">Select GST rate</option>@for (r of taxRates(); track r.uuid) { @if (r.active) { <option [value]="r.uuid">{{r.taxName}} · {{r.gstRate}}%</option> } }</select></label>
+        <label>HSN code<input maxlength="20" placeholder="Alphanumeric HSN code" [ngModel]="mappingForm().hsnCode" (ngModelChange)="updateMappingForm('hsnCode',$event)"></label>
+        <div class="form-grid">
+          <label>Effective from<input type="date" [ngModel]="mappingForm().effectiveFrom" (ngModelChange)="updateMappingForm('effectiveFrom',$event)"></label>
+          <label>Effective to (optional)<input type="date" [ngModel]="mappingForm().effectiveTo" (ngModelChange)="updateMappingForm('effectiveTo',$event)"></label>
+        </div>
+        <p class="form-hint">The backend validates the selected GST rate's effective period and prevents overlapping product mappings.</p>
+        <div class="modal-actions"><button class="secondary" (click)="showMappingForm.set(false)">Cancel</button><button class="primary" [disabled]="saving() || !canManageMapping()" (click)="saveMapping()">Save mapping</button></div>
+      </section>
+    </div>
+  }
+</section>

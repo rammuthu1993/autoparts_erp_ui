@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { filter } from 'rxjs';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationStart, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/auth/services/auth.service';
 import { AuthStateService } from '../../core/auth/services/auth-state.service';
 import { AppIconComponent } from '../../shared/components/app-icon/app-icon.component';
@@ -30,6 +29,7 @@ export class MainLayoutComponent {
 
   readonly mobileExpanded = signal(false);
   readonly isLoggingOut = signal(false);
+  readonly navigating = signal(false);
   readonly currentUrl = signal(this.router.url);
 
   readonly navigation: NavigationGroup[] = [
@@ -37,13 +37,13 @@ export class MainLayoutComponent {
       { label: 'Dashboard', icon: 'dashboard', route: '/dashboard', implemented: true, permission: 'DASHBOARD.VIEW' }
     ]},
     { label: 'OPERATIONS', items: [
-      { label: 'Sales', icon: 'receipt', implemented: false },
-      { label: 'Sales Returns', icon: 'receipt', implemented: false },
-      { label: 'Purchases', icon: 'shopping-cart', implemented: false },
-      { label: 'Purchase Returns', icon: 'truck', implemented: false },
-      { label: 'Inventory', icon: 'warehouse', implemented: false },
-      { label: 'Cash Register', icon: 'wallet', implemented: false },
-      { label: 'Daily Closing', icon: 'calendar', implemented: false }
+      { label: 'Sales', icon: 'receipt', route: '/operations/sales', implemented: true, permission: 'SALES.VIEW' },
+      { label: 'Purchases', icon: 'shopping-cart', route: '/operations/purchases', implemented: true, permission: 'PURCHASES.VIEW' },
+      { label: 'Inventory', icon: 'warehouse', route: '/operations/inventory', implemented: true, permission: 'INVENTORY.VIEW' },
+      { label: 'Cash Register', icon: 'wallet', route: '/operations/cash-register', implemented: true, permission: 'CASH_REGISTER.VIEW' },
+      { label: 'Daily Closing', icon: 'calendar', route: '/operations/daily-closing', implemented: true, permission: 'DAILY_CLOSING.VIEW' },
+      { label: 'Sales Returns', icon: 'receipt', route: '/finance/sales-returns', implemented: true, permission: 'SALES_RETURNS.VIEW' },
+      { label: 'Purchase Returns', icon: 'truck', route: '/finance/purchase-returns', implemented: true, permission: 'PURCHASE_RETURNS.VIEW' }
     ]},
     { label: 'MASTERS', items: [
       { label: 'Products', icon: 'package', route: '/masters/products', implemented: true, permission: 'PRODUCTS.VIEW' },
@@ -51,24 +51,23 @@ export class MainLayoutComponent {
       { label: 'Brands', icon: 'tag', route: '/masters/brands', implemented: true, permission: 'BRANDS.VIEW' },
       { label: 'Customers', icon: 'users', route: '/masters/customers', implemented: true, permission: 'CUSTOMERS.VIEW' },
       { label: 'Suppliers', icon: 'truck', route: '/masters/suppliers', implemented: true, permission: 'SUPPLIERS.VIEW' },
-      { label: 'Tax Setup', icon: 'receipt', implemented: false }
+      { label: 'Tax Setup', icon: 'receipt', route: '/masters/tax-setup', implemented: true, permission: 'TAX_RATES.VIEW' }
     ]},
     { label: 'FINANCE', items: [
-      { label: 'Ledgers', icon: 'file-chart', implemented: false },
-      { label: 'Expenses', icon: 'wallet', implemented: false }
+      { label: 'Ledgers', icon: 'file-chart', route: '/finance/ledgers', implemented: true, permission: 'EXPENSES.LEDGER_VIEW' },
+      { label: 'Expenses', icon: 'wallet', route: '/finance/expenses', implemented: true, permission: 'EXPENSES.VIEW' }
     ]},
     { label: 'INSIGHTS', items: [
-      { label: 'Reports & Analytics', icon: 'chart', implemented: false },
-      { label: 'Data Quality', icon: 'check-circle', implemented: false },
-      { label: 'Reconciliation', icon: 'receipt', implemented: false }
+      { label: 'Reports & Analytics', icon: 'chart', route: '/reports', implemented: true, permission: 'REPORTS.VIEW' }
     ]},
     { label: 'ADMINISTRATION', items: [
-      { label: 'Users & Roles', icon: 'users', implemented: false },
-      { label: 'Audit Logs', icon: 'file-chart', implemented: false },
-      { label: 'Settings', icon: 'settings', implemented: false }
+      { label: 'Users', icon: 'users', route: '/admin/users', implemented: true, permission: 'USERS.VIEW' },
+      { label: 'Roles & Permissions', icon: 'shield', route: '/admin/roles', implemented: true, permission: 'ROLES.VIEW' },
+      { label: 'Audit Logs', icon: 'file-chart', route: '/admin/audit-logs', implemented: true, permission: 'AUDIT_LOGS.VIEW' },
+      { label: 'Settings', icon: 'settings', route: '/admin/settings', implemented: true, permission: 'USERS.VIEW' }
     ]},
     { label: 'INTELLIGENCE', items: [
-      { label: 'AI Assistant', icon: 'brain', implemented: false, badge: 'AI' }
+      { label: 'AI Assistant', icon: 'brain', route: '/ai-assistant', implemented: true, permission: 'AI_ASSISTANT.USE', badge: 'AI' }
     ]}
   ];
 
@@ -83,14 +82,21 @@ export class MainLayoutComponent {
   readonly roles = this.authState.roles;
 
   constructor() {
-    this.router.events.pipe(filter(event => event instanceof NavigationEnd))
-      .subscribe(event => this.currentUrl.set((event as NavigationEnd).urlAfterRedirects));
+    this.router.events.subscribe(event => {
+      if (event instanceof NavigationStart) this.navigating.set(true);
+      if (event instanceof NavigationEnd) {
+        this.currentUrl.set(event.urlAfterRedirects);
+        this.navigating.set(false);
+        this.mobileExpanded.set(false);
+      }
+      if (event instanceof NavigationCancel || event instanceof NavigationError) this.navigating.set(false);
+    });
   }
 
   get pageTitle(): string {
     const url = this.currentUrl();
     const match = this.navigation.flatMap(group => group.items)
-      .find(item => item.route === url);
+      .find(item => item.route === url || (item.route && url.startsWith(item.route + '/')));
     return match?.label ?? 'Workspace';
   }
 

@@ -1,0 +1,217 @@
+<section class="finance-page">
+  <header class="heading"><div><span class="eyebrow">FINANCE & CONTROL</span><h1>Returns, Expenses & Ledgers</h1><p>Process customer returns, supplier returns, operating expenses and account ledgers.</p></div></header>
+  <nav class="tabs"><button [class.active]="section()==='sales-returns'" (click)="setSection('sales-returns')">Sales Returns</button><button [class.active]="section()==='purchase-returns'" (click)="setSection('purchase-returns')">Purchase Returns</button><button [class.active]="section()==='expenses'" (click)="setSection('expenses')">Expenses</button><button [class.active]="section()==='ledgers'" (click)="setSection('ledgers')">Ledgers</button></nav>
+  @if (section()==='sales-returns') {
+    <article class="panel">
+      <h2>Create customer return</h2>
+      <label>Original sale / invoice
+        <select #saleSelect (change)="selectSale(saleSelect.value)">
+          <option value="">Select invoice</option>
+          @for (s of sales(); track s.uuid) {
+            <option [value]="s.uuid">{{s.invoiceNumber}} · {{s.customerName}} · {{s.grandTotal | currency:'INR'}}</option>
+          }
+        </select>
+      </label>
+
+      @if (selectedSale(); as sale) {
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Product</th><th>Sold quantity</th><th>Return quantity</th><th>Unit price</th></tr></thead>
+            <tbody>
+              @for (p of sale.products ?? []; track p.uuid) {
+                <tr>
+                  <td>{{p.productName}}<small>{{p.productCode}}</small></td>
+                  <td>{{p.quantity}}</td>
+                  <td><input type="number" min="0" [max]="p.quantity" step="0.001" [value]="returnLines()[p.uuid] || 0" (input)="setReturnQty(p.uuid, $any($event.target).value)"></td>
+                  <td>{{p.unitPrice | currency:'INR'}}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="form-grid">
+          <label>Return reason<input [ngModel]="returnReason()" (ngModelChange)="returnReason.set($event)" maxlength="500"></label>
+          <label>Notes<input [ngModel]="returnNotes()" (ngModelChange)="returnNotes.set($event)" maxlength="1000"></label>
+        </div>
+        <button class="primary" [disabled]="saving() || !canCreateSalesReturn()" (click)="createSalesReturn()">Create return</button>
+        @if (!canCreateSalesReturn()) { <small class="muted">You do not have SALES_RETURNS.CREATE permission.</small> }
+        <h3>Previous returns for selected invoice</h3>
+        @for (r of salesReturns(); track r.uuid) {
+          <button class="row-link" (click)="showSalesReturn(r.uuid)">{{r.invoiceNumber}} · {{r.returnDate | date:'mediumDate'}} · {{r.status}} · {{r.totalReturnAmount | currency:'INR'}}</button>
+        }
+      }
+    </article>
+
+    @if (salesReturnDetail(); as r) {
+      <article class="panel">
+        <h2>Sales return {{r.uuid}}</h2>
+        <p>{{r.status}} · Refundable {{r.refundableAmount | currency:'INR'}}</p>
+        <div class="form-grid">
+          <label>Refund method<select [ngModel]="refundForm().paymentMethod" (ngModelChange)="setRefund('paymentMethod', $event)">@for (m of paymentMethods; track m) { <option [value]="m">{{m}}</option> }</select></label>
+          <label>Amount<input type="number" min="0.01" [ngModel]="refundForm().amount" (ngModelChange)="setRefund('amount', +$event)"></label>
+          <label>Reference<input [ngModel]="refundForm().referenceNumber" (ngModelChange)="setRefund('referenceNumber', $event)"></label>
+          <label>Notes<input [ngModel]="refundForm().notes" (ngModelChange)="setRefund('notes', $event)"></label>
+        </div>
+        <button class="primary" [disabled]="saving() || !canRefundSales()" (click)="recordSalesRefund(r)">Record refund</button>
+      </article>
+    }
+  }
+
+  @if (section()==='purchase-returns') {
+    <article class="panel">
+      <h2>Create supplier return</h2>
+      <label>Original purchase
+        <select #purchaseSelect (change)="selectPurchase(purchaseSelect.value)">
+          <option value="">Select purchase</option>
+          @for (p of purchases(); track p.uuid) {
+            <option [value]="p.uuid">{{p.purchaseNumber}} · {{p.supplierName}} · {{p.grandTotal | currency:'INR'}}</option>
+          }
+        </select>
+      </label>
+      @if (selectedPurchase(); as purchase) {
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Product</th><th>Received quantity</th><th>Return quantity</th></tr></thead>
+            <tbody>
+              @for (p of purchase.products ?? []; track p.uuid) {
+                <tr>
+                  <td>{{p.productName}}<small>{{p.productCode}}</small></td>
+                  <td>{{p.quantity}}</td>
+                  <td><input type="number" min="0" [max]="p.quantity" step="0.001" [value]="returnLines()[p.uuid] || 0" (input)="setReturnQty(p.uuid, $any($event.target).value)"></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="form-grid">
+          <label>Return reason<input [ngModel]="returnReason()" (ngModelChange)="returnReason.set($event)" maxlength="500"></label>
+          <label>Notes<input [ngModel]="returnNotes()" (ngModelChange)="returnNotes.set($event)" maxlength="1000"></label>
+        </div>
+        <button class="primary" [disabled]="saving() || !canCreatePurchaseReturn()" (click)="createPurchaseReturn()">Create purchase return</button>
+      }
+    </article>
+
+    @if (purchaseReturnDetail(); as r) {
+      <article class="panel">
+        <h2>Purchase return {{r.returnNumber}}</h2>
+        <p>Total {{r.totalReturnAmount | currency:'INR'}} · Supplier credit status {{r.supplierCredit?.creditNoteNumber}}</p>
+        <p>Available credit {{r.supplierCredit?.availableAmount | currency:'INR'}}</p>
+        <div class="form-grid">
+          <label>Refund method<select [ngModel]="refundForm().paymentMethod" (ngModelChange)="setRefund('paymentMethod', $event)">@for (m of paymentMethods; track m) { <option [value]="m">{{m}}</option> }</select></label>
+          <label>Refund amount<input type="number" min="0.01" [ngModel]="refundForm().amount" (ngModelChange)="setRefund('amount', +$event)"></label>
+          <label>Reference<input [ngModel]="refundForm().referenceNumber" (ngModelChange)="setRefund('referenceNumber', $event)"></label>
+          <label>Notes<input [ngModel]="refundForm().notes" (ngModelChange)="setRefund('notes', $event)"></label>
+        </div>
+        <button class="primary" [disabled]="saving()" (click)="recordSupplierRefund(r.supplierCredit)">Record supplier refund</button>
+        <button class="secondary" (click)="applySupplierCredit(r.supplierCredit)">Apply credit to another purchase</button>
+      </article>
+    }
+  }
+
+  @if (section()==='expenses'){
+    <article class="panel"><h2>Record expense</h2><div class="form-grid"><label>Category<select [ngModel]="expenseForm().categoryUuid" (ngModelChange)="setExpense('categoryUuid',$event)"><option value="">Select category</option>@for (c of categories();track c.uuid){<option [value]="c.uuid">{{c.name}}</option>}</select></label><label>Date<input type="date" [ngModel]="expenseForm().expenseDate" (ngModelChange)="setExpense('expenseDate',$event)"></label><label>Title<input [ngModel]="expenseForm().title" (ngModelChange)="setExpense('title',$event)" maxlength="200"></label><label>Amount<input type="number" min="0.01" step="0.01" [ngModel]="expenseForm().amount" (ngModelChange)="setExpense('amount',+$event)"></label><label>Payment method<select [ngModel]="expenseForm().paymentMethod" (ngModelChange)="setExpense('paymentMethod',$event)">@for (m of paymentMethods;track m){<option [value]="m">{{m}}</option>}</select></label><label>Reference number<input [ngModel]="expenseForm().referenceNumber" (ngModelChange)="setExpense('referenceNumber',$event)"></label><label>Description<input [ngModel]="expenseForm().description" (ngModelChange)="setExpense('description',$event)"></label><label>Notes<input [ngModel]="expenseForm().notes" (ngModelChange)="setExpense('notes',$event)"></label></div><button class="primary" [disabled]="saving()||!canCreateExpense()" (click)="saveExpense()">Save expense</button></article>
+    <article class="panel"><div class="panel-head"><h2>Expense register</h2><input placeholder="Search expenses" [ngModel]="search()" (ngModelChange)="setSearch($event)"></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Payment</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>@for (e of expenses();track e.uuid){<tr><td>{{e.expenseDate|date:'mediumDate'}}</td><td>{{e.title}}</td><td>{{e.categoryName}}</td><td>{{e.paymentMethod}}</td><td>{{e.amount|currency:'INR'}}</td><td>{{e.status}}</td><td><button class="text-btn" [disabled]="e.status==='CANCELLED'||!canCancelExpense()" (click)="cancelExpense(e.uuid)">Cancel</button></td></tr>}@empty {<tr><td colspan="7" class="empty">No expenses found.</td></tr>}</tbody></table></div><div class="pagination"><button class="secondary" [disabled]="page()===0" (click)="page.set(page()-1);loadExpenses()">Previous</button><span>Page {{page()+1}} of {{totalPages()||1}}</span><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="page.set(page()+1);loadExpenses()">Next</button></div></article>
+  }
+  @if (section()==='ledgers'){
+    <article class="panel ledger-filter">
+      <div class="panel-head"><div><h2>Account ledger</h2><p>Choose the ledger and reporting period. Select a party only when that ledger requires one.</p></div></div>
+      <div class="form-grid ledger-filters">
+        <label>Ledger type
+          <select [ngModel]="ledgerType()" (ngModelChange)="setLedgerType($event)">
+            <option value="expense">Expense ledger</option>
+            <option value="purchase">Purchase ledger</option>
+            <option value="customer">Customer ledger</option>
+            <option value="supplier">Supplier ledger</option>
+            <option value="sales">Sales ledger</option>
+          </select>
+        </label>
+        @if (ledgerType()==='customer' || ledgerType()==='sales') {
+          <label>Customer
+            <select [ngModel]="ledgerPartyUuid()" (ngModelChange)="ledgerPartyUuid.set($event)">
+              <option value="">Select customer</option>
+              @for (c of customers(); track c.uuid) { <option [value]="c.uuid">{{c.customerCode || c.customerName}} · {{c.customerName}}</option> }
+            </select>
+          </label>
+        }
+        @if (ledgerType()==='supplier' || ledgerType()==='purchase') {
+          <label>Supplier {{ledgerType()==='purchase'?'(optional)':''}}
+            <select [ngModel]="ledgerPartyUuid()" (ngModelChange)="ledgerPartyUuid.set($event)">
+              <option value="">{{ledgerType()==='purchase'?'All suppliers':'Select supplier'}}</option>
+              @for (s of suppliers(); track s.uuid) { <option [value]="s.uuid">{{s.supplierCode || s.supplierName}} · {{s.supplierName}}</option> }
+            </select>
+          </label>
+        }
+        <label>From date<input type="date" [ngModel]="fromDate()" (ngModelChange)="setDate('fromDate',$event)"></label>
+        <label>To date<input type="date" [ngModel]="toDate()" (ngModelChange)="setDate('toDate',$event)"></label>
+      </div>
+      <div class="ledger-actions">
+        <button class="primary" [disabled]="loading()" (click)="loadLedger()">Load ledger</button>
+        <button class="secondary" [disabled]="!ledgerData()" (click)="exportLedger()">Export Excel</button>
+      </div>
+    </article>
+    @if (ledgerData(); as ledger) {
+      <article class="panel ledger-result">
+        <div class="panel-head"><div><h2>Ledger result</h2><p>{{ledger.totalElements ?? ledger.entries?.length ?? 0}} transactions · {{fromDate() | date:'dd MMM yyyy'}} – {{toDate() | date:'dd MMM yyyy'}}</p></div></div>
+        @if (ledgerType()==='expense') {
+          <div class="ledger-summary">
+            <div><span>Total expenses</span><strong>{{ledger.summary?.totalExpenses ?? 0}}</strong></div>
+            <div><span>Total amount</span><strong>{{(ledger.summary?.totalAmount ?? 0) | currency:'INR'}}</strong></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Expense</th><th>Category</th><th>Payment</th><th>Reference</th><th>Status</th><th class="amount">Amount</th></tr></thead><tbody>
+            @for (e of ledger.entries ?? []; track e.expenseUuid) { <tr><td>{{e.expenseDate | date:'dd MMM yyyy'}}</td><td>{{e.title}}</td><td>{{e.categoryName}}</td><td>{{e.paymentMethod}}</td><td>{{e.referenceNumber || '—'}}</td><td><span class="status-pill" [class.cancelled]="e.status==='CANCELLED'">{{e.status}}</span></td><td class="amount">{{e.amount | currency:'INR'}}</td></tr> }
+            @empty { <tr><td colspan="7" class="empty">No expense transactions for this period.</td></tr> }
+          </tbody></table></div>
+        } @else if (ledgerType()==='purchase') {
+          <div class="ledger-summary">
+            <div><span>Purchases</span><strong>{{ledger.summary?.totalPurchases ?? 0}}</strong></div>
+            <div><span>Subtotal</span><strong>{{(ledger.summary?.totalSubtotal ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Tax</span><strong>{{(ledger.summary?.totalTax ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Total purchases</span><strong>{{(ledger.summary?.totalPurchaseAmount ?? 0) | currency:'INR'}}</strong></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Purchase no.</th><th>Supplier</th><th>Supplier invoice</th><th>Status</th><th>Received</th><th class="amount">Total</th></tr></thead><tbody>
+            @for (e of ledger.entries ?? []; track e.purchaseUuid) { <tr><td>{{e.purchaseDate | date:'dd MMM yyyy'}}</td><td>{{e.purchaseNumber}}</td><td>{{e.supplierName}}</td><td>{{e.supplierInvoiceNo || '—'}}</td><td>{{e.status}}</td><td>{{e.receivedAt ? (e.receivedAt | date:'dd MMM yyyy') : '—'}}</td><td class="amount">{{e.grandTotal | currency:'INR'}}</td></tr> }
+            @empty { <tr><td colspan="7" class="empty">No purchase transactions for this period.</td></tr> }
+          </tbody></table></div>
+        } @else if (ledgerType()==='customer') {
+          <div class="ledger-summary">
+            <div><span>Customer</span><strong>{{ledger.summary?.customerName}}</strong></div>
+            <div><span>Opening balance</span><strong>{{(ledger.summary?.openingBalance ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Total sales</span><strong>{{(ledger.summary?.totalSales ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Payments</span><strong>{{(ledger.summary?.totalPayments ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Sales returns</span><strong>{{(ledger.summary?.totalSalesReturns ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Closing balance</span><strong>{{(ledger.summary?.closingBalance ?? 0) | currency:'INR'}}</strong></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amount">Sales</th><th class="amount">Payment</th><th class="amount">Return</th><th class="amount">Balance</th></tr></thead><tbody>
+            @for (e of ledger.entries ?? []; track e.transactionUuid) { <tr><td>{{e.transactionDate | date:'dd MMM yyyy'}}</td><td>{{e.transactionType}}</td><td>{{e.referenceNumber || '—'}}</td><td class="amount">{{e.salesAmount | currency:'INR'}}</td><td class="amount">{{e.paymentAmount | currency:'INR'}}</td><td class="amount">{{e.salesReturnAmount | currency:'INR'}}</td><td class="amount">{{e.balance | currency:'INR'}}</td></tr> }
+            @empty { <tr><td colspan="7" class="empty">No customer transactions for this period.</td></tr> }
+          </tbody></table></div>
+        } @else if (ledgerType()==='supplier') {
+          <div class="ledger-summary">
+            <div><span>Supplier</span><strong>{{ledger.summary?.supplierName}}</strong></div>
+            <div><span>Opening balance</span><strong>{{(ledger.summary?.openingBalance ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Total purchases</span><strong>{{(ledger.summary?.totalPurchases ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Payments</span><strong>{{(ledger.summary?.totalPayments ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Purchase returns</span><strong>{{(ledger.summary?.totalPurchaseReturns ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Closing balance</span><strong>{{(ledger.summary?.closingBalance ?? 0) | currency:'INR'}}</strong></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amount">Purchase</th><th class="amount">Payment</th><th class="amount">Return</th><th class="amount">Balance</th></tr></thead><tbody>
+            @for (e of ledger.entries ?? []; track e.transactionUuid) { <tr><td>{{e.transactionDate | date:'dd MMM yyyy'}}</td><td>{{e.transactionType}}</td><td>{{e.referenceNumber || '—'}}</td><td class="amount">{{e.purchaseAmount | currency:'INR'}}</td><td class="amount">{{e.paymentAmount | currency:'INR'}}</td><td class="amount">{{e.purchaseReturnAmount | currency:'INR'}}</td><td class="amount">{{e.balance | currency:'INR'}}</td></tr> }
+            @empty { <tr><td colspan="7" class="empty">No supplier transactions for this period.</td></tr> }
+          </tbody></table></div>
+        } @else {
+          <div class="ledger-summary">
+            <div><span>Opening balance</span><strong>{{(ledger.summary?.openingBalance ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Total debit</span><strong>{{(ledger.summary?.totalDebit ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Total credit</span><strong>{{(ledger.summary?.totalCredit ?? 0) | currency:'INR'}}</strong></div>
+            <div><span>Closing balance</span><strong>{{(ledger.summary?.closingBalance ?? 0) | currency:'INR'}}</strong></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Invoice</th><th>Customer</th><th>Description</th><th class="amount">Debit</th><th class="amount">Credit</th><th class="amount">Balance</th></tr></thead><tbody>
+            @for (e of ledger.entries ?? []; track $index) { <tr><td>{{e.transactionDate | date:'dd MMM yyyy'}}</td><td>{{e.transactionType}}</td><td>{{e.invoiceNumber || '—'}}</td><td>{{e.customerName}}</td><td>{{e.description}}</td><td class="amount">{{e.debit | currency:'INR'}}</td><td class="amount">{{e.credit | currency:'INR'}}</td><td class="amount">{{e.runningBalance | currency:'INR'}}</td></tr> }
+            @empty { <tr><td colspan="8" class="empty">No sales transactions for this period.</td></tr> }
+          </tbody></table></div>
+        }
+      </article>
+    }
+  }
+  @if (loading()){<div class="loading">Loading…</div>}
+</section>

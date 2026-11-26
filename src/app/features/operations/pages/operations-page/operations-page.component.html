@@ -1,0 +1,183 @@
+<section class="operations-page">
+  <header class="page-heading">
+    <div><div class="eyebrow">OPERATIONS / ERP WORKSPACE</div><h1>{{ title() }}</h1>
+      <p>
+        @switch (type()) {
+          @case ('purchases') { Record supplier purchases, receive stock and track supplier payments. }
+          @case ('inventory') { Monitor stock levels and record controlled stock adjustments. }
+          @case ('cash-register') { Manage cash registers and opening or closing sessions. }
+          @case ('daily-closing') { Review business-day summaries and perform end-of-day closing. }
+        }
+      </p>
+    </div>
+    @if (type() === 'purchases' && canCreatePurchase) { <button class="primary" (click)="openPurchaseForm()">+ New purchase</button> }
+    @if (type() === 'cash-register' && canCreateRegister) { <button class="primary" (click)="showRegisterForm.set(true)">+ New register</button> }
+  </header>
+
+  @if (type() === 'purchases' || type() === 'inventory' || type() === 'daily-closing') {
+    <div class="toolbar">
+      @if (type() !== 'daily-closing') {
+        <input aria-label="Search" [value]="search()" (input)="onSearch($any($event.target).value)" placeholder="Search by code, name or reference">
+      }
+      <span class="record-count">{{ totalElements() }} records</span>
+    </div>
+  }
+
+  @if (loading()) { <div class="loading-state"><span class="spinner"></span> Loading {{ title().toLowerCase() }}…</div> }
+
+  @if (!loading() && type() === 'purchases') {
+    <div class="table-card"><div class="table-scroll"><table>
+      <thead><tr><th>Purchase no.</th><th>Supplier</th><th>Supplier invoice</th><th>Date</th><th>Status</th><th class="right">Total</th><th>Actions</th></tr></thead>
+      <tbody>
+        @for (p of rows(); track p.uuid) {
+          <tr><td class="strong">{{ p.purchaseNumber }}</td><td>{{ p.supplierName }}</td><td>{{ p.supplierInvoiceNo }}</td><td>{{ p.purchaseDate | date:'dd MMM yyyy' }}</td>
+            <td><span class="pill" [class.warning]="p.status === 'DRAFT'">{{ p.status }}</span></td><td class="right strong">{{ money(p.grandTotal) }}</td>
+            <td class="actions"><button class="link" (click)="openPurchaseDetails(p)">View</button>
+              @if (p.status === 'DRAFT' && canReceivePurchase) { <button class="link" (click)="receivePurchase(p)">Receive</button> }
+              @if (p.status === 'RECEIVED' && canRecordPurchasePayment) { <button class="link" (click)="openPurchasePayment(p)">Payment</button> }
+            </td>
+          </tr>
+        } @empty { <tr><td colspan="7" class="empty">No purchase records found.</td></tr> }
+      </tbody>
+    </table></div>
+    <footer class="table-footer"><span>Page {{ page()+1 }} of {{ totalPages() || 1 }}</span><div><button class="secondary" [disabled]="page()===0" (click)="changePage(-1)">Previous</button><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="changePage(1)">Next</button></div></footer></div>
+  }
+
+  @if (!loading() && type() === 'inventory') {
+    <div class="stock-summary"><div><span>Products displayed</span><strong>{{ totalElements() }}</strong></div><div><span>Low stock in this page</span><strong class="warning-text">{{ rows().filter(r => r.lowStock).length }}</strong></div></div>
+    <div class="table-card"><div class="table-scroll"><table>
+      <thead><tr><th>Product code</th><th>Part no.</th><th>Product</th><th class="right">Available</th><th class="right">Minimum</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>
+        @for (s of rows(); track s.productUuid) {
+          <tr><td class="strong">{{ s.productCode }}</td><td>{{ s.partNo }}</td><td>{{ s.productName }}</td><td class="right strong">{{ s.quantity }} {{ s.unit }}</td><td class="right">{{ s.minimumStock }}</td>
+            <td><span class="pill" [class.danger]="s.lowStock">{{ s.lowStock ? 'LOW STOCK' : 'IN STOCK' }}</span></td>
+            <td>@if (canAdjustStock) { <button class="link" (click)="openAdjustment(s)">Adjust stock</button> }</td>
+          </tr>
+        } @empty { <tr><td colspan="7" class="empty">No inventory records found.</td></tr> }
+      </tbody>
+    </table></div><footer class="table-footer"><span>Page {{ page()+1 }} of {{ totalPages() || 1 }}</span><div><button class="secondary" [disabled]="page()===0" (click)="changePage(-1)">Previous</button><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="changePage(1)">Next</button></div></footer></div>
+  }
+
+  @if (!loading() && type() === 'cash-register') {
+    <div class="register-grid">
+      @for (r of rows(); track r.uuid) {
+        <article class="register-card"><div class="register-head"><div class="register-icon">₹</div><span class="pill" [class.danger]="!r.active">{{ r.active ? 'ACTIVE' : 'INACTIVE' }}</span></div>
+          <div class="register-code">{{ r.registerCode }}</div><h2>{{ r.name }}</h2><p>{{ r.description || 'Cash counter register' }}</p>
+          @if (activeSessions()[r.uuid]; as session) {
+            <div class="session-box"><div><span>Session status</span><strong>{{ session.status }}</strong></div><div><span>Opening balance</span><strong>{{ money(session.openingBalance) }}</strong></div><div><span>Expected cash</span><strong>{{ money(session.expectedClosingBalance) }}</strong></div></div>
+            @if (session.status === 'OPEN' && canCloseRegister) { <button class="primary full" (click)="closeSession(r)">Close session</button> }
+            @if (session.status !== 'OPEN' && r.active && canOpenRegister) { <button class="primary full" (click)="openSession(r)">Open new session</button> }
+          } @else {
+            <div class="session-box muted-box">No current session detected.</div>
+            @if (r.active && canOpenRegister) { <button class="primary full" (click)="openSession(r)">Open session</button> }
+          }
+        </article>
+      } @empty { <div class="empty-card">No cash registers configured.</div> }
+    </div>
+  }
+
+  @if (!loading() && type() === 'daily-closing') {
+    <section class="closing-action"><div><strong>Close business day</strong><p>Reconcile sales, returns, purchases, expenses and cash registers before closing.</p></div>
+      @if (canPerformClosing) {
+        <form [formGroup]="dailyForm" (ngSubmit)="performClosing()" class="closing-form">
+          <input type="date" formControlName="businessDate"><input formControlName="notes" placeholder="Closing notes (optional)">
+          <button class="primary" type="submit" [disabled]="saving()">{{ saving() ? 'Closing…' : 'Perform closing' }}</button>
+        </form>
+      }
+    </section>
+    <div class="table-card"><div class="table-scroll"><table><thead><tr><th>Business date</th><th>Closed at</th><th>Sales</th><th>Purchases</th><th>Expenses</th><th>Cash difference</th></tr></thead>
+      <tbody>@for (c of rows(); track c.uuid) { <tr><td class="strong">{{ c.businessDate | date:'dd MMM yyyy' }}</td><td>{{ c.closedAt | date:'dd MMM yyyy, h:mm a' }}</td>
+        <td>{{ money(c.summary?.salesTotal) }}</td><td>{{ money(c.summary?.purchaseTotal) }}</td><td>{{ money(c.summary?.expenseTotal) }}</td><td [class.warning-text]="hasCashDifference(c.summary?.cashDifferenceTotal)">{{ money(c.summary?.cashDifferenceTotal) }}</td>
+      </tr> } @empty { <tr><td colspan="6" class="empty">No daily closing records found.</td></tr> }</tbody></table></div>
+      <footer class="table-footer"><span>Page {{ page()+1 }} of {{ totalPages() || 1 }}</span><div><button class="secondary" [disabled]="page()===0" (click)="changePage(-1)">Previous</button><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="changePage(1)">Next</button></div></footer>
+    </div>
+  }
+</section>
+
+@if (showForm() && type() === 'purchases') {
+  <div class="backdrop" (click)="showForm.set(false)"><section class="modal wide" (click)="$event.stopPropagation()">
+    <header><div><h2>Create purchase draft</h2><p>Enter the supplier invoice details and purchased items.</p></div><button class="close" type="button" (click)="showForm.set(false)">×</button></header>
+    <form [formGroup]="purchaseForm" (ngSubmit)="createPurchase()">
+      <div class="form-grid">
+        <label>Supplier *<select formControlName="supplierId"><option [ngValue]="null">Select supplier</option>@for (s of suppliers(); track s.id) { <option [ngValue]="s.id">{{ s.supplierName }}</option> }</select></label>
+        <label>Supplier invoice no. *<input formControlName="supplierInvoiceNo"></label>
+        <label>Purchase date *<input type="date" formControlName="purchaseDate"></label>
+        <label>Notes<input formControlName="notes"></label>
+      </div>
+      <div class="line-title"><strong>Purchase items</strong><button type="button" class="secondary" (click)="addPurchaseLine()">+ Add item</button></div>
+      <div formArrayName="products" class="line-list">
+        @for (line of purchaseLines.controls; let i = $index; track i) {
+          <div class="purchase-line" [formGroupName]="i">
+            <label class="product-select">Product *<select formControlName="productId" (change)="onPurchaseProductSelected(i)"><option [ngValue]="null">Select product</option>@for (p of products(); track p.id) { <option [ngValue]="p.id">{{ p.productCode }} · {{ p.name }}</option> }</select></label>
+            <label>Qty *<input type="number" min="0.001" step="0.001" formControlName="quantity"></label>
+            <label>Unit cost *<input type="number" min="0" step="0.01" formControlName="purchasePrice"></label>
+            <label>Discount *<input type="number" min="0" step="0.01" formControlName="discountAmount"></label>
+            <label>GST % *<input type="number" min="0" max="100" step="0.01" formControlName="taxPercent"></label>
+            <button type="button" class="remove" (click)="removePurchaseLine(i)" [disabled]="purchaseLines.length===1">×</button>
+          </div>
+        }
+      </div>
+      <footer><button type="button" class="secondary" (click)="showForm.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Create draft' }}</button></footer>
+    </form>
+  </section></div>
+}
+
+@if (showAdjust() && selected(); as stock) {
+  <div class="backdrop" (click)="showAdjust.set(false)"><section class="modal" (click)="$event.stopPropagation()">
+    <header><div><h2>Adjust stock</h2><p>{{ stock.productCode }} · {{ stock.productName }} · Current: {{ stock.quantity }} {{ stock.unit }}</p></div><button class="close" (click)="showAdjust.set(false)">×</button></header>
+    <form [formGroup]="adjustmentForm" (ngSubmit)="adjustStock()" class="form-grid">
+      <label>Quantity change *<input type="number" step="0.001" formControlName="quantityChange" placeholder="Positive to add, negative to reduce"></label>
+      <label>Reason *<input formControlName="reason" maxlength="250"></label>
+      <label class="wide-field">Notes<textarea formControlName="notes" rows="3"></textarea></label>
+      <footer class="wide-field"><button type="button" class="secondary" (click)="showAdjust.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">Save adjustment</button></footer>
+    </form>
+  </section></div>
+}
+
+@if (selected(); as purchase) {
+  @if (type() === 'purchases' && !showAdjust()) {
+    <div class="backdrop" (click)="selected.set(null)"><section class="modal" (click)="$event.stopPropagation()">
+      <header><div><h2>{{ purchase.purchaseNumber }}</h2><p>{{ purchase.supplierName }} · {{ purchase.supplierInvoiceNo }}</p></div><button class="close" (click)="selected.set(null)">×</button></header>
+      @if (purchase.products; as lines) { <div class="detail-lines">@for (line of lines; track line.uuid) { <div><span>{{ line.productName }} × {{ line.quantity }}</span><strong>{{ money(line.lineTotal) }}</strong></div> }</div> }
+      <div class="detail-total"><span>Grand total</span><strong>{{ money(purchase.grandTotal) }}</strong></div>
+      @if (canRecordPurchasePayment && purchase.status === 'RECEIVED') {
+        <form [formGroup]="paymentForm" (ngSubmit)="recordPurchasePayment()" class="form-grid payment-form">
+          <label>Payment method<select formControlName="paymentMethod"><option>CASH</option><option>UPI</option><option>CARD</option><option>BANK</option></select></label>
+          <label>Amount *<input type="number" min="0.01" step="0.01" formControlName="amount"></label>
+          <label class="wide-field">Reference<input formControlName="referenceNumber"></label>
+          <label class="wide-field">Notes<input formControlName="notes"></label>
+          <footer class="wide-field"><button class="primary" type="submit" [disabled]="saving()">Record supplier payment</button></footer>
+        </form>
+      }
+    </section></div>
+  }
+}
+
+@if (showOpenSession() && selectedRegister(); as register) {
+  <div class="backdrop" (click)="showOpenSession.set(false)"><section class="modal" (click)="$event.stopPropagation()">
+    <header><div><h2>Open cash session</h2><p>{{ register.registerCode }} · {{ register.name }}</p></div><button class="close" (click)="showOpenSession.set(false)">×</button></header>
+    <form [formGroup]="openingForm" (ngSubmit)="confirmOpenSession()" class="form-grid">
+      <label class="wide-field">Opening cash balance (₹) *<input type="number" min="0" step="0.01" formControlName="openingBalance"></label>
+      <footer class="wide-field"><button type="button" class="secondary" (click)="showOpenSession.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">Open session</button></footer>
+    </form>
+  </section></div>
+}
+@if (showCloseSession() && selectedRegister(); as register) {
+  <div class="backdrop" (click)="showCloseSession.set(false)"><section class="modal" (click)="$event.stopPropagation()">
+    <header><div><h2>Close cash session</h2><p>{{ register.name }} · Count the physical cash before closing.</p></div><button class="close" (click)="showCloseSession.set(false)">×</button></header>
+    <form [formGroup]="closingForm" (ngSubmit)="confirmCloseSession()" class="form-grid">
+      <label class="wide-field">Actual closing cash (₹) *<input type="number" min="0" step="0.01" formControlName="actualClosingBalance"></label>
+      <footer class="wide-field"><button type="button" class="secondary" (click)="showCloseSession.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">Confirm close</button></footer>
+    </form>
+  </section></div>
+}
+@if (showRegisterForm()) {
+  <div class="backdrop" (click)="showRegisterForm.set(false)"><section class="modal" (click)="$event.stopPropagation()">
+    <header><div><h2>Create cash register</h2><p>Register a physical billing counter.</p></div><button class="close" (click)="showRegisterForm.set(false)">×</button></header>
+    <form [formGroup]="registerForm" (ngSubmit)="createRegister()" class="form-grid">
+      <label>Register code *<input formControlName="registerCode"></label><label>Register name *<input formControlName="name"></label>
+      <label class="wide-field">Description<input formControlName="description"></label>
+      <footer class="wide-field"><button type="button" class="secondary" (click)="showRegisterForm.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">Create register</button></footer>
+    </form>
+  </section></div>
+}

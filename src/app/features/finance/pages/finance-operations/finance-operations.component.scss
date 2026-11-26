@@ -1,0 +1,25 @@
+@use '../../../../../styles/abstracts/variables' as *;
+:host{display:block}.finance-page{display:grid;gap:18px;color:#24344b}.heading{display:flex;justify-content:space-between;align-items:flex-end}.eyebrow{font-size:10px;font-weight:800;letter-spacing:1.3px;color:#3977c9}h1{margin:5px 0;font-size:25px}h2{margin:0 0 14px;font-size:16px}h3{font-size:14px}.heading p,.muted,small{color:#8290a3;font-size:11px}.tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid #e5eaf1}.tabs button{padding:11px 15px;border:0;border-bottom:2px solid transparent;background:transparent;color:#6c7b90;font-weight:650;cursor:pointer}.tabs button.active{color:#245da8;border-color:#3977c9}.panel{padding:20px;border:1px solid #e6ebf2;border-radius:13px;background:#fff;box-shadow:0 3px 14px #1b355008;display:grid;gap:15px}.panel>label{max-width:520px}.panel-head,.pagination{display:flex;justify-content:space-between;align-items:center;gap:12px}.form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.form-grid label,.panel>label{display:grid;gap:6px;color:#65748a;font-size:11px;font-weight:650}input,select{min-width:0;width:100%;height:38px;padding:0 10px;border:1px solid #dce3ec;border-radius:7px;background:#fff;color:#24344b;font:inherit;font-size:12px}input[type=number]{max-width:130px}.primary,.secondary,.text-btn{min-height:36px;padding:0 14px;border:1px solid #dce4ef;border-radius:7px;background:#fff;color:#34516f;font-weight:650;font-size:11px;cursor:pointer}.primary{border-color:#2f67b5;background:#2f67b5;color:white}.primary:disabled,.secondary:disabled{opacity:.45;cursor:not-allowed}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:11px}th,td{padding:11px 10px;border-bottom:1px solid #edf0f5;text-align:left}th{background:#f8fafd;color:#738197;font-size:9px;text-transform:uppercase;letter-spacing:.5px}td{color:#34465e}td small{display:block;margin-top:3px}.row-link{display:block;width:100%;padding:10px;text-align:left;border:0;border-bottom:1px solid #edf0f5;background:white;color:#315f9c;cursor:pointer}.empty{text-align:center;color:#8793a5;padding:25px}.json-view{max-height:500px;overflow:auto;padding:14px;border-radius:8px;background:#f6f8fb;font-size:10px;white-space:pre-wrap;overflow-wrap:anywhere}.loading{position:fixed;right:24px;bottom:24px;padding:10px 16px;border-radius:8px;background:#19375b;color:#fff;font-size:11px;box-shadow:0 5px 20px #0002}.pagination span{font-size:11px;color:#748196}@media(max-width:900px){.form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.form-grid{grid-template-columns:1fr}.panel{padding:14px}.heading{align-items:flex-start;flex-direction:column}h1{font-size:21px}}
+
+/* Ledger UI */
+.ledger-filter .panel-head,.ledger-result .panel-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+.ledger-filter .panel-head h2,.ledger-result .panel-head h2{margin:0 0 5px}
+.ledger-filter .panel-head p,.ledger-result .panel-head p{margin:0;color:#7b899d;font-size:12px}
+.ledger-filters{grid-template-columns:repeat(4,minmax(0,1fr));align-items:end}
+.ledger-filters label{display:grid;gap:7px;color:#66758b;font-size:11px;font-weight:700}
+.ledger-filters select,.ledger-filters input{height:42px;width:100%;box-sizing:border-box;padding:0 12px;border:1px solid #d9e2ee;border-radius:8px;background:#fff;color:#26364d;font:inherit;font-size:12px}
+.ledger-actions{display:flex;gap:10px;margin-top:16px}
+.ledger-actions button{min-width:180px}
+.ledger-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0 18px}
+.ledger-summary>div{display:grid;gap:7px;padding:13px;border:1px solid #e7edf4;border-radius:9px;background:#f9fbfe}
+.ledger-summary span{color:#7b899d;font-size:10px;font-weight:700}
+.ledger-summary strong{color:#233a58;font-size:16px;overflow-wrap:anywhere}
+.ledger-result .table-wrap{border:1px solid #edf1f6;border-radius:9px}
+.ledger-result table{min-width:850px}
+.ledger-result th,.ledger-result td{padding:12px 14px}
+.ledger-result td{font-size:11px}
+.ledger-result .amount{text-align:right;font-variant-numeric:tabular-nums}
+.status-pill{display:inline-block;padding:4px 8px;border-radius:20px;background:#e9f7ef;color:#267447;font-size:10px;font-weight:800}
+.status-pill.cancelled{background:#fff0f0;color:#a94343}
+@media(max-width:900px){.ledger-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.ledger-filters{grid-template-columns:1fr}.ledger-actions{flex-direction:column}.ledger-actions button{width:100%}}

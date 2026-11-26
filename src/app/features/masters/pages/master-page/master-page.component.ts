@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } 
 import { CommonModule } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { finalize } from 'rxjs';
+import { finalize, map, switchMap } from 'rxjs';
 import { AuthStateService } from '../../../../core/auth/services/auth-state.service';
 import { ToastService } from '../../../../core/notifications/toast.service';
 import { MastersService } from '../../services/masters.service';
@@ -12,6 +12,18 @@ interface MasterRecord {
   uuid: string;
   active?: boolean;
   [key: string]: unknown;
+}
+
+interface ProductBarcodeResponse {
+  productUuid: string;
+  productCode: string;
+  productName: string;
+  barcode: string;
+  barcodeType: string;
+}
+
+interface ProductBarcodeView extends ProductBarcodeResponse {
+  imageUrl: string;
 }
 
 interface MasterConfig {
@@ -50,6 +62,8 @@ export class MasterPageComponent implements OnInit {
   readonly showForm = signal(false);
   readonly editingUuid = signal<string | null>(null);
   readonly submitting = signal(false);
+  readonly barcodeLoading = signal(false);
+  readonly selectedBarcode = signal<ProductBarcodeView | null>(null);
   readonly categoryOptions = signal<MasterOption[]>([]);
   readonly brandOptions = signal<MasterOption[]>([]);
   readonly fields = computed(() => this.config().fields.map(field => {
@@ -202,6 +216,76 @@ export class MasterPageComponent implements OnInit {
     if (next < 0 || next >= this.totalPages()) return;
     this.page.set(next);
     this.load();
+  }
+
+  openBarcode(row: MasterRecord): void {
+    if (this.config().type !== 'products' || !row.uuid || this.barcodeLoading()) return;
+    this.clearBarcodeImage();
+    this.barcodeLoading.set(true);
+    this.service.getBarcode<ProductBarcodeResponse>(row.uuid).pipe(
+      switchMap(details => this.service.getBarcodeImage(row.uuid as string).pipe(
+        map(image => ({ ...details, imageUrl: URL.createObjectURL(image) }))
+      )),
+      finalize(() => this.barcodeLoading.set(false))
+    ).subscribe({
+      next: barcode => this.selectedBarcode.set(barcode),
+      error: () => this.toast.error('The barcode could not be loaded. Please try again.', 'Barcode unavailable')
+    });
+  }
+
+  closeBarcode(): void {
+    this.clearBarcodeImage();
+  }
+
+  private clearBarcodeImage(): void {
+    const current = this.selectedBarcode();
+    if (current?.imageUrl) URL.revokeObjectURL(current.imageUrl);
+    this.selectedBarcode.set(null);
+  }
+
+  downloadBarcode(): void {
+    const barcode = this.selectedBarcode();
+    if (!barcode) return;
+    this.service.downloadBarcode(barcode.productUuid).subscribe({
+      next: blob => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `${barcode.productCode}-barcode.png`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        this.toast.success('Barcode image downloaded.', 'Download complete');
+      },
+      error: () => this.toast.error('Barcode download failed. Please try again.', 'Download failed')
+    });
+  }
+
+  printBarcode(): void {
+    const barcode = this.selectedBarcode();
+    if (!barcode) return;
+    const printWindow = window.open('', '_blank', 'width=720,height=520');
+    if (!printWindow) {
+      this.toast.warning('Allow pop-ups to print the barcode.', 'Print window blocked');
+      return;
+    }
+    const safeName = this.escapeHtml(barcode.productName);
+    const safeCode = this.escapeHtml(barcode.productCode);
+    const safeValue = this.escapeHtml(barcode.barcode);
+    printWindow.document.write(`<!doctype html><html><head><title>${safeCode} barcode</title><style>body{font-family:Arial,sans-serif;text-align:center;padding:36px;color:#172033}.label{width:420px;margin:30px auto;padding:22px;border:1px solid #dbe2ea;border-radius:8px}img{display:block;width:100%;height:auto;margin:18px auto 8px}h2{font-size:18px;margin:0 0 8px}.code{font-size:14px;letter-spacing:2px;font-weight:700}.value{font-size:12px;color:#475569;margin-top:8px}@media print{body{padding:0}.label{border:0;margin:0 auto}}</style></head><body><div class="label"><h2>${safeName}</h2><div class="code">${safeCode}</div><img src="${barcode.imageUrl}" alt="Product barcode"><div class="value">${safeValue}</div></div><script>window.onload=()=>{window.focus();window.print();};</script></body></html>`);
+    printWindow.document.close();
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, character => {
+      switch (character) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        case "'": return '&#39;';
+        default: return character;
+      }
+    });
   }
 
   openCreate(): void {

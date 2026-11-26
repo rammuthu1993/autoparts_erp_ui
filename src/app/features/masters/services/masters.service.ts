@@ -43,6 +43,18 @@ export class MastersService {
     return this.http.patch<void>(`${API_BASE_URL}${this.endpoints[type]}/${uuid}/deactivate`, {});
   }
 
+  getBarcode<T>(uuid: string): Observable<T> {
+    return this.http.get<T>(`${API_BASE_URL}${this.endpoints.products}/${uuid}/barcode`);
+  }
+
+  getBarcodeImage(uuid: string): Observable<Blob> {
+    return this.http.get(`${API_BASE_URL}${this.endpoints.products}/${uuid}/barcode/image`, { responseType: 'blob' });
+  }
+
+  downloadBarcode(uuid: string): Observable<Blob> {
+    return this.http.get(`${API_BASE_URL}${this.endpoints.products}/${uuid}/barcode/download`, { responseType: 'blob' });
+  }
+
   lookup<T>(type: 'categories' | 'brands'): Observable<PageResponse<T>> {
     const params = new HttpParams().set('page', '0').set('size', '200')
       .set('sortBy', 'id').set('sortDir', 'asc');
