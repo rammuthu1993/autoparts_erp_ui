@@ -12,6 +12,8 @@ export interface SalesSummary {
   invoicePaidAmount: number;
   invoiceOutstandingAmount: number;
   collectionTotal: number;
+  refundTotal: number;
+  netCollectionTotal: number;
   cashCollections: number;
   upiCollections: number;
   cardCollections: number;

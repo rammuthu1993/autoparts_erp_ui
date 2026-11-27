@@ -67,6 +67,8 @@ export class MasterPageComponent implements OnInit {
   readonly submitting = signal(false);
   readonly barcodeLoading = signal(false);
   readonly selectedBarcode = signal<ProductBarcodeView | null>(null);
+  readonly selectedProduct = signal<MasterRecord | null>(null);
+  readonly productViewLoading = signal(false);
   readonly categoryOptions = signal<MasterOption[]>([]);
   readonly brandOptions = signal<MasterOption[]>([]);
   readonly taxRateOptions = signal<MasterOption[]>([]);
@@ -128,7 +130,7 @@ export class MasterPageComponent implements OnInit {
           { key: 'purchasePrice', label: 'Purchase price', type: 'number', required: true, min: 0, step: '0.01' },
           { key: 'sellingPrice', label: 'Selling price', type: 'number', required: true, min: 0, step: '0.01' },
           { key: 'minimumStock', label: 'Minimum stock', type: 'number', required: true, min: 0, step: '0.001' },
-          { ...commonText('unit', 'Unit', true), maxLength: 20 },
+          { key: 'unit', label: 'Unit', type: 'select', required: true, options: [] },
           { key: 'taxRateUuid', label: 'GST rate', type: 'select', options: [] },
           { ...commonText('hsnCode', 'HSN code'), maxLength: 20, pattern: '^[0-9A-Za-z]*$' }
         ]
@@ -190,6 +192,21 @@ export class MasterPageComponent implements OnInit {
   }
 
   private loadProductLookups(): void {
+    this.http.get<Array<{ code: string; name: string; symbol: string }>>(`${API_BASE_URL}/api/v1/units/active`).subscribe({
+      next: units => {
+        const options = (units ?? []).map(unit => ({
+          id: unit.code,
+          name: `${unit.name} (${unit.symbol})`
+        }));
+        this.config.update(current => ({
+          ...current,
+          fields: current.fields.map(field =>
+            field.key === 'unit' ? { ...field, options } : field
+          )
+        }));
+      },
+      error: () => this.toast.error('Unable to load product units. Check the units master API.', 'Unit options unavailable')
+    });
     this.service.lookup<{ id: number; name: string }>('categories').subscribe({
       next: response => this.categoryOptions.set((response.content ?? []).map(item => ({ id: item.id, name: item.name }))),
       error: () => this.categoryOptions.set([])
@@ -238,6 +255,19 @@ export class MasterPageComponent implements OnInit {
     this.page.set(next);
     this.load();
   }
+
+  openProductView(row: MasterRecord): void {
+    if (this.config().type !== 'products' || !row.uuid || this.productViewLoading()) return;
+    this.productViewLoading.set(true);
+    this.service.get<MasterRecord>('products', row.uuid).pipe(
+      finalize(() => this.productViewLoading.set(false))
+    ).subscribe({
+      next: product => this.selectedProduct.set(product),
+      error: () => this.toast.error('Unable to load product details.', 'Product unavailable')
+    });
+  }
+
+  closeProductView(): void { this.selectedProduct.set(null); }
 
   openBarcode(row: MasterRecord): void {
     if (this.config().type !== 'products' || !row.uuid || this.barcodeLoading()) return;

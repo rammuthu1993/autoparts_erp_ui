@@ -1,6 +1,6 @@
 <section class="finance-page">
   <header class="heading"><div><span class="eyebrow">FINANCE & CONTROL</span><h1>Returns, Expenses & Ledgers</h1><p>Process customer returns, supplier returns, operating expenses and account ledgers.</p></div></header>
-  <nav class="tabs"><button [class.active]="section()==='sales-returns'" (click)="setSection('sales-returns')">Sales Returns</button><button [class.active]="section()==='purchase-returns'" (click)="setSection('purchase-returns')">Purchase Returns</button><button [class.active]="section()==='expenses'" (click)="setSection('expenses')">Expenses</button><button [class.active]="section()==='ledgers'" (click)="setSection('ledgers')">Ledgers</button></nav>
+  <nav class="tabs"><button [class.active]="section()==='sales-returns'" (click)="setSection('sales-returns')">↩ Sales Returns</button><button [class.active]="section()==='purchase-returns'" (click)="setSection('purchase-returns')">↪ Purchase Returns</button><button [class.active]="section()==='expenses'" (click)="setSection('expenses')">▤ Expenses</button><button [class.active]="section()==='ledgers'" (click)="setSection('ledgers')">▥ Ledgers</button></nav>
   @if (section()==='sales-returns') {
     <article class="panel">
       <h2>Create customer return</h2>
@@ -16,13 +16,15 @@
       @if (selectedSale(); as sale) {
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Product</th><th>Sold quantity</th><th>Return quantity</th><th>Unit price</th></tr></thead>
+            <thead><tr><th>Product</th><th>Sold</th><th>Previously returned</th><th>Remaining</th><th>Return now</th><th>Unit price</th></tr></thead>
             <tbody>
               @for (p of sale.products ?? []; track p.uuid) {
                 <tr>
                   <td>{{p.productName}}<small>{{p.productCode}}</small></td>
                   <td>{{p.quantity}}</td>
-                  <td><input type="number" min="0" [max]="p.quantity" step="0.001" [value]="returnLines()[p.uuid] || 0" (input)="setReturnQty(p.uuid, $any($event.target).value)"></td>
+                  <td>{{previousSalesQty()[p.uuid] || 0}}</td>
+                  <td>{{remainingSalesQty(p)}}</td>
+                  <td><input type="number" min="0" [max]="remainingSalesQty(p)" step="0.001" [disabled]="salesReturnHistoryLoading() || remainingSalesQty(p)<=0" [value]="returnLines()[p.uuid] || 0" (input)="setReturnQty(p.uuid, $any($event.target).value)"></td>
                   <td>{{p.unitPrice | currency:'INR'}}</td>
                 </tr>
               }
@@ -33,26 +35,36 @@
           <label>Return reason<input [ngModel]="returnReason()" (ngModelChange)="returnReason.set($event)" maxlength="500"></label>
           <label>Notes<input [ngModel]="returnNotes()" (ngModelChange)="returnNotes.set($event)" maxlength="1000"></label>
         </div>
-        <button class="primary" [disabled]="saving() || !canCreateSalesReturn()" (click)="createSalesReturn()">Create return</button>
+        <button class="primary" [disabled]="saving() || !canCreateSalesReturn()" (click)="createSalesReturn()" data-tooltip="Create sales return">＋ Create return</button>
         @if (!canCreateSalesReturn()) { <small class="muted">You do not have SALES_RETURNS.CREATE permission.</small> }
         <h3>Previous returns for selected invoice</h3>
         @for (r of salesReturns(); track r.uuid) {
-          <button class="row-link" (click)="showSalesReturn(r.uuid)">{{r.invoiceNumber}} · {{r.returnDate | date:'mediumDate'}} · {{r.status}} · {{r.totalReturnAmount | currency:'INR'}}</button>
+          <button class="row-link" type="button" data-tooltip="View return details" (click)="showSalesReturn(r.uuid)">◉ {{r.returnNumber || r.uuid}} · {{r.returnDate | date:'mediumDate'}} · {{r.status}} · {{r.totalReturnAmount | currency:'INR'}}</button>
         }
       }
     </article>
 
     @if (salesReturnDetail(); as r) {
       <article class="panel">
-        <h2>Sales return {{r.uuid}}</h2>
-        <p>{{r.status}} · Refundable {{r.refundableAmount | currency:'INR'}}</p>
+        <h2>Sales return {{r.returnNumber || 'Reference unavailable'}}</h2>
+        <p>{{r.invoiceNumber}} · {{r.returnDate | date:'mediumDate'}} · {{r.status}}</p>
+        <div class="table-wrap"><table><thead><tr><th>Product</th><th>Code</th><th>Returned quantity</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>
+          @for (line of r.products ?? []; track line.uuid) { <tr><td>{{line.productName}}</td><td>{{line.productCode}}</td><td>{{line.quantity}}</td><td>{{line.unitPrice | currency:'INR'}}</td><td>{{line.lineTotal | currency:'INR'}}</td> } 
+        </tbody></table></div>
+        <p>Return total {{r.totalReturnAmount | currency:'INR'}} · Refunded {{r.refundedAmount | currency:'INR'}} · Refundable {{r.refundableAmount | currency:'INR'}}</p>
+        @if ((r.refunds ?? []).length) {
+          <h3>Refund history</h3>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Reference</th></tr></thead><tbody>
+            @for (refund of r.refunds; track refund.uuid) { <tr><td>{{refund.refundDate | date:'mediumDate'}}</td><td>{{refund.paymentMethod}}</td><td>{{refund.amount | currency:'INR'}}</td><td>{{refund.referenceNumber || '—'}}</td></tr> }
+          </tbody></table></div>
+        }
         <div class="form-grid">
           <label>Refund method<select [ngModel]="refundForm().paymentMethod" (ngModelChange)="setRefund('paymentMethod', $event)">@for (m of paymentMethods; track m) { <option [value]="m">{{m}}</option> }</select></label>
           <label>Amount<input type="number" min="0.01" [ngModel]="refundForm().amount" (ngModelChange)="setRefund('amount', +$event)"></label>
           <label>Reference<input [ngModel]="refundForm().referenceNumber" (ngModelChange)="setRefund('referenceNumber', $event)"></label>
           <label>Notes<input [ngModel]="refundForm().notes" (ngModelChange)="setRefund('notes', $event)"></label>
         </div>
-        <button class="primary" [disabled]="saving() || !canRefundSales()" (click)="recordSalesRefund(r)">Record refund</button>
+        <button class="primary" [disabled]="saving() || !canRefundSales()" (click)="recordSalesRefund(r)" data-tooltip="Record customer refund">↗ Record refund</button>
       </article>
     }
   }
@@ -71,13 +83,15 @@
       @if (selectedPurchase(); as purchase) {
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Product</th><th>Received quantity</th><th>Return quantity</th></tr></thead>
+            <thead><tr><th>Product</th><th>Received</th><th>Previously returned</th><th>Remaining</th><th>Return now</th></tr></thead>
             <tbody>
               @for (p of purchase.products ?? []; track p.uuid) {
                 <tr>
                   <td>{{p.productName}}<small>{{p.productCode}}</small></td>
                   <td>{{p.quantity}}</td>
-                  <td><input type="number" min="0" [max]="p.quantity" step="0.001" [value]="returnLines()[p.uuid] || 0" (input)="setReturnQty(p.uuid, $any($event.target).value)"></td>
+                  <td>{{previousPurchaseQty()[p.uuid] || 0}}</td>
+                  <td>{{remainingPurchaseQty(p)}}</td>
+                  <td><input type="number" min="0" [max]="remainingPurchaseQty(p)" step="0.001" [disabled]="purchaseReturnHistoryLoading() || remainingPurchaseQty(p)<=0" [value]="returnLines()[p.uuid] || 0" (input)="setReturnQty(p.uuid, $any($event.target).value)"></td>
                 </tr>
               }
             </tbody>
@@ -87,13 +101,21 @@
           <label>Return reason<input [ngModel]="returnReason()" (ngModelChange)="returnReason.set($event)" maxlength="500"></label>
           <label>Notes<input [ngModel]="returnNotes()" (ngModelChange)="returnNotes.set($event)" maxlength="1000"></label>
         </div>
-        <button class="primary" [disabled]="saving() || !canCreatePurchaseReturn()" (click)="createPurchaseReturn()">Create purchase return</button>
+        <button class="primary" [disabled]="saving() || !canCreatePurchaseReturn()" (click)="createPurchaseReturn()" data-tooltip="Create purchase return">＋ Create purchase return</button>
+        <h3>Previous returns for selected purchase</h3>
+        @for (r of purchaseReturns(); track r.uuid) {
+          <button class="row-link" type="button" data-tooltip="View purchase return details" (click)="showPurchaseReturn(r.uuid)">◉ {{r.returnNumber}} · {{r.returnDate | date:'mediumDate'}} · {{r.totalReturnAmount | currency:'INR'}}</button>
+        }
       }
     </article>
 
     @if (purchaseReturnDetail(); as r) {
       <article class="panel">
         <h2>Purchase return {{r.returnNumber}}</h2>
+        <p>{{r.purchaseNumber}} · {{r.returnDate | date:'mediumDate'}} · Supplier credit {{r.supplierCredit?.creditNoteNumber}}</p>
+        <div class="table-wrap"><table><thead><tr><th>Product</th><th>Code</th><th>Returned quantity</th><th>Purchase price</th><th>Line total</th></tr></thead><tbody>
+          @for (line of r.products ?? []; track line.uuid) { <tr><td>{{line.productName}}</td><td>{{line.productCode}}</td><td>{{line.quantity}}</td><td>{{line.purchasePrice | currency:'INR'}}</td><td>{{line.lineTotal | currency:'INR'}}</td> }
+        </tbody></table></div>
         <p>Total {{r.totalReturnAmount | currency:'INR'}} · Supplier credit status {{r.supplierCredit?.creditNoteNumber}}</p>
         <p>Available credit {{r.supplierCredit?.availableAmount | currency:'INR'}}</p>
         <div class="form-grid">
@@ -102,15 +124,15 @@
           <label>Reference<input [ngModel]="refundForm().referenceNumber" (ngModelChange)="setRefund('referenceNumber', $event)"></label>
           <label>Notes<input [ngModel]="refundForm().notes" (ngModelChange)="setRefund('notes', $event)"></label>
         </div>
-        <button class="primary" [disabled]="saving()" (click)="recordSupplierRefund(r.supplierCredit)">Record supplier refund</button>
-        <button class="secondary" (click)="applySupplierCredit(r.supplierCredit)">Apply credit to another purchase</button>
+        <button class="primary" [disabled]="saving()" (click)="recordSupplierRefund(r.supplierCredit)" data-tooltip="Record supplier refund">↗ Record supplier refund</button>
+        <button class="secondary" (click)="applySupplierCredit(r.supplierCredit)" data-tooltip="Apply supplier credit">⇄ Apply credit to another purchase</button>
       </article>
     }
   }
 
   @if (section()==='expenses'){
-    <article class="panel"><h2>Record expense</h2><div class="form-grid"><label>Category<select [ngModel]="expenseForm().categoryUuid" (ngModelChange)="setExpense('categoryUuid',$event)"><option value="">Select category</option>@for (c of categories();track c.uuid){<option [value]="c.uuid">{{c.name}}</option>}</select></label><label>Date<input type="date" [ngModel]="expenseForm().expenseDate" (ngModelChange)="setExpense('expenseDate',$event)"></label><label>Title<input [ngModel]="expenseForm().title" (ngModelChange)="setExpense('title',$event)" maxlength="200"></label><label>Amount<input type="number" min="0.01" step="0.01" [ngModel]="expenseForm().amount" (ngModelChange)="setExpense('amount',+$event)"></label><label>Payment method<select [ngModel]="expenseForm().paymentMethod" (ngModelChange)="setExpense('paymentMethod',$event)">@for (m of paymentMethods;track m){<option [value]="m">{{m}}</option>}</select></label><label>Reference number<input [ngModel]="expenseForm().referenceNumber" (ngModelChange)="setExpense('referenceNumber',$event)"></label><label>Description<input [ngModel]="expenseForm().description" (ngModelChange)="setExpense('description',$event)"></label><label>Notes<input [ngModel]="expenseForm().notes" (ngModelChange)="setExpense('notes',$event)"></label></div><button class="primary" [disabled]="saving()||!canCreateExpense()" (click)="saveExpense()">Save expense</button></article>
-    <article class="panel"><div class="panel-head"><h2>Expense register</h2><input placeholder="Search expenses" [ngModel]="search()" (ngModelChange)="setSearch($event)"></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Payment</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>@for (e of expenses();track e.uuid){<tr><td>{{e.expenseDate|date:'mediumDate'}}</td><td>{{e.title}}</td><td>{{e.categoryName}}</td><td>{{e.paymentMethod}}</td><td>{{e.amount|currency:'INR'}}</td><td>{{e.status}}</td><td><button class="text-btn" [disabled]="e.status==='CANCELLED'||!canCancelExpense()" (click)="cancelExpense(e.uuid)">Cancel</button></td></tr>}@empty {<tr><td colspan="7" class="empty">No expenses found.</td></tr>}</tbody></table></div><div class="pagination"><button class="secondary" [disabled]="page()===0" (click)="page.set(page()-1);loadExpenses()">Previous</button><span>Page {{page()+1}} of {{totalPages()||1}}</span><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="page.set(page()+1);loadExpenses()">Next</button></div></article>
+    <article class="panel"><h2>Record expense</h2><div class="form-grid"><label>Category<select [ngModel]="expenseForm().categoryUuid" (ngModelChange)="setExpense('categoryUuid',$event)"><option value="">Select category</option>@for (c of categories();track c.uuid){<option [value]="c.uuid">{{c.name}}</option>}</select></label><label>Date<input type="date" [ngModel]="expenseForm().expenseDate" (ngModelChange)="setExpense('expenseDate',$event)"></label><label>Title<input [ngModel]="expenseForm().title" (ngModelChange)="setExpense('title',$event)" maxlength="200"></label><label>Amount<input type="number" min="0.01" step="0.01" [ngModel]="expenseForm().amount" (ngModelChange)="setExpense('amount',+$event)"></label><label>Payment method<select [ngModel]="expenseForm().paymentMethod" (ngModelChange)="setExpense('paymentMethod',$event)">@for (m of paymentMethods;track m){<option [value]="m">{{m}}</option>}</select></label><label>Reference number<input [ngModel]="expenseForm().referenceNumber" (ngModelChange)="setExpense('referenceNumber',$event)"></label><label>Description<input [ngModel]="expenseForm().description" (ngModelChange)="setExpense('description',$event)"></label><label>Notes<input [ngModel]="expenseForm().notes" (ngModelChange)="setExpense('notes',$event)"></label></div><button class="primary" [disabled]="saving()||!canCreateExpense()" (click)="saveExpense()" data-tooltip="Save expense">＋ Save expense</button></article>
+    <article class="panel"><div class="panel-head"><h2>Expense register</h2><input placeholder="Search expenses" [ngModel]="search()" (ngModelChange)="setSearch($event)"></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Payment</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>@for (e of expenses();track e.uuid){<tr><td>{{e.expenseDate|date:'mediumDate'}}</td><td>{{e.title}}</td><td>{{e.categoryName}}</td><td>{{e.paymentMethod}}</td><td>{{e.amount|currency:'INR'}}</td><td>{{e.status}}</td><td><button class="text-btn" [disabled]="e.status==='CANCELLED'||!canCancelExpense()" (click)="cancelExpense(e.uuid)" data-tooltip="Cancel expense">⊘</button></td></tr>}@empty {<tr><td colspan="7" class="empty">No expenses found.</td></tr>}</tbody></table></div><div class="pagination"><button class="secondary" [disabled]="page()===0" (click)="page.set(page()-1);loadExpenses()">Previous</button><span>Page {{page()+1}} of {{totalPages()||1}}</span><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="page.set(page()+1);loadExpenses()">Next</button></div></article>
   }
   @if (section()==='ledgers'){
     <article class="panel ledger-filter">
@@ -145,8 +167,8 @@
         <label>To date<input type="date" [ngModel]="toDate()" (ngModelChange)="setDate('toDate',$event)"></label>
       </div>
       <div class="ledger-actions">
-        <button class="primary" [disabled]="loading()" (click)="loadLedger()">Load ledger</button>
-        <button class="secondary" [disabled]="!ledgerData()" (click)="exportLedger()">Export Excel</button>
+        <button class="primary" [disabled]="loading()" (click)="loadLedger()" data-tooltip="Load ledger">▤ Load ledger</button>
+        <button class="secondary" [disabled]="!ledgerData()" (click)="exportLedger()" data-tooltip="Export ledger to Excel">⇩ Export Excel</button>
       </div>
     </article>
     @if (ledgerData(); as ledger) {

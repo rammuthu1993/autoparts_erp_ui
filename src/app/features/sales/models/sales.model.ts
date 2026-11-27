@@ -117,3 +117,150 @@ export interface CustomerLookup {
   phone?: string;
   active: boolean;
 }
+
+export type CancellationRefundStatus =
+  | 'NOT_REQUIRED'
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'SUCCESSFUL'
+  | 'FAILED'
+  | 'REVERSED';
+
+export type GstAdjustmentType =
+  | 'INVOICE_CANCELLATION'
+  | 'CREDIT_NOTE_REQUIRED'
+  | 'NO_TAX_ADJUSTMENT'
+  | 'PERIOD_LOCKED';
+
+export interface SalesCancellationRefundAllocation {
+  paymentMethod: Exclude<PaymentMethod, 'CREDIT'>;
+  amount: number;
+  referenceNumber?: string;
+  originalPaymentUuid?: string;
+}
+
+export interface SalesCancelRequest {
+  reason: string;
+  refundMethod?: Exclude<PaymentMethod, 'CREDIT'>;
+  refundReference?: string;
+  refundAllocations?: SalesCancellationRefundAllocation[];
+  confirmExternalRefund?: boolean;
+  gstAdjustmentReference?: string;
+  idempotencyKey?: string;
+  notes?: string;
+}
+
+export interface SalesCancellationPreviewItem {
+  salesProductUuid: string;
+  productUuid: string;
+  productCode: string;
+  productName: string;
+  unit: string;
+  originalQuantity: number;
+  previouslyReturnedQuantity: number;
+  remainingQuantityToRestore: number;
+  taxableReversed: number;
+  totalTaxReversed: number;
+  lineTotalReversed: number;
+}
+
+export interface SalesCancellationPreviewResponse {
+  saleUuid: string;
+  invoiceNumber: string;
+  saleDate: string;
+  customerName?: string;
+  customerPhone?: string;
+  status: SalesStatus;
+  eligibleForCancellation: boolean;
+  ineligibilityReason?: string | null;
+  grandTotal: number;
+  previouslyPaidAmount: number;
+  previouslyReturnedAmount: number;
+  previouslyRefundedAmount: number;
+  outstandingAmount: number;
+  cancelledInvoiceAmount: number;
+  refundableAmount: number;
+  receivableAdjustmentAmount: number;
+  gstAdjustmentType: GstAdjustmentType;
+  taxableReversed: number;
+  cgstReversed: number;
+  sgstReversed: number;
+  igstReversed: number;
+  totalTaxReversed: number;
+  requiresCashSession: boolean;
+  dailyPeriodClosed: boolean;
+  originalPayments: SalePaymentResponse[];
+  items: SalesCancellationPreviewItem[];
+  warnings: string[];
+}
+
+export interface SalesCancellationItemResponse {
+  uuid: string;
+  productUuid: string;
+  productCode: string;
+  productName: string;
+  originalQuantity: number;
+  previouslyReturnedQuantity: number;
+  restoredQuantity: number;
+  unit: string;
+  taxableReversed: number;
+  cgstReversed: number;
+  sgstReversed: number;
+  igstReversed: number;
+  totalTaxReversed: number;
+  lineTotalReversed: number;
+}
+
+export interface SalesCancellationRefundResponse {
+  uuid: string;
+  originalPaymentUuid?: string | null;
+  paymentMethod: PaymentMethod;
+  amount: number;
+  status: CancellationRefundStatus;
+  referenceNumber?: string | null;
+  refundDate: string;
+  confirmedAt?: string | null;
+  notes?: string | null;
+}
+
+export interface SalesCancellationResponse {
+  uuid: string;
+  saleUuid: string;
+  invoiceNumber: string;
+  cancellationReason: string;
+  cancelledBy: number;
+  cancelledByUsername: string;
+  cancelledAt: string;
+  originalGrandTotal: number;
+  originalTaxableAmount: number;
+  originalCgstAmount: number;
+  originalSgstAmount: number;
+  originalIgstAmount: number;
+  originalTotalTaxAmount: number;
+  previouslyPaidAmount: number;
+  previouslyReturnedAmount: number;
+  previouslyRefundedAmount: number;
+  cancelledInvoiceAmount: number;
+  refundAmount: number;
+  refundMethod?: PaymentMethod | null;
+  refundStatus: CancellationRefundStatus;
+  refundReference?: string | null;
+  refundConfirmedAt?: string | null;
+  receivableAdjustmentAmount: number;
+  gstAdjustmentType: GstAdjustmentType;
+  gstAdjustmentReference?: string | null;
+  creditNoteNumber?: string | null;
+  irn?: string | null;
+  irnStatus: string;
+  ewayBillNumber?: string | null;
+  ewayBillStatus: string;
+  notes?: string | null;
+  items: SalesCancellationItemResponse[];
+  refunds: SalesCancellationRefundResponse[];
+}
+
+export interface SalesCancellationRefundConfirmRequest {
+  status: CancellationRefundStatus;
+  referenceNumber?: string;
+  notes?: string;
+}

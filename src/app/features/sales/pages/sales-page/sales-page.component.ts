@@ -1,10 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { finalize, forkJoin } from 'rxjs';
 import { AuthStateService } from '../../../../core/auth/services/auth-state.service';
 import { ToastService } from '../../../../core/notifications/toast.service';
-import { CustomerLookup, PaymentMethod, ProductLookup, SaleResponse, SupplyType, SalesStatusOption } from '../../models/sales.model';
+import {
+  CustomerLookup, PaymentMethod, ProductLookup, SaleResponse,
+  SalesCancellationPreviewResponse, SalesCancellationRefundResponse,
+  SalesCancellationResponse, SalesCancelRequest, SupplyType, SalesStatusOption
+} from '../../models/sales.model';
 
 interface SalesTaxPreview {
   subtotal: number;
@@ -38,6 +42,8 @@ export class SalesPageComponent implements OnInit {
   readonly customers = signal<CustomerLookup[]>([]);
   readonly statusOptions = signal<SalesStatusOption[]>([]);
   readonly paymentStatusOptions = signal<SalesStatusOption[]>([]);
+  readonly returnStatusBySale = signal<Record<string, string>>({});
+  readonly saleReturns = signal<any[]>([]);
   readonly selectedSale = signal<SaleResponse | null>(null);
   readonly taxPreview = signal<SalesTaxPreview>({
     subtotal: 0, discount: 0, taxableAmount: 0,
@@ -56,11 +62,19 @@ export class SalesPageComponent implements OnInit {
   readonly showCreate = signal(false);
   readonly showPayment = signal(false);
   readonly paymentSaving = signal(false);
+  readonly showCancelDialog = signal(false);
+  readonly cancelPreview = signal<SalesCancellationPreviewResponse | null>(null);
+  readonly cancelPreviewLoading = signal(false);
+  readonly cancelling = signal(false);
+  readonly cancellationDetails = signal<SalesCancellationResponse | null>(null);
+  readonly confirmingRefundUuid = signal<string | null>(null);
   readonly canCreate = computed(() => this.auth.hasPermission('SALES.CREATE'));
   readonly canComplete = computed(() => this.auth.hasPermission('SALES.COMPLETE'));
   readonly canCancel = computed(() => this.auth.hasPermission('SALES.CANCEL'));
+  readonly canCancelIssued = computed(() => this.auth.hasPermission('SALES.CANCEL_ISSUED'));
   readonly canPay = computed(() => this.auth.hasPermission('SALES.PAYMENT_RECORD'));
   readonly paymentMethods: PaymentMethod[] = ['CASH', 'UPI', 'CARD', 'BANK', 'CREDIT'];
+  readonly refundMethods: Exclude<PaymentMethod, 'CREDIT'>[] = ['CASH', 'UPI', 'CARD', 'BANK'];
   readonly paymentMethodOptions: { value: PaymentMethod; label: string }[] = [
     { value: 'CASH', label: 'Cash' },
     { value: 'UPI', label: 'UPI' },
@@ -84,6 +98,14 @@ export class SalesPageComponent implements OnInit {
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
     referenceNumber: [''],
     notes: ['']
+  });
+
+  readonly cancelForm = this.fb.group({
+    reason: ['', [Validators.required, Validators.maxLength(500)]],
+    refundMethod: ['CASH' as Exclude<PaymentMethod, 'CREDIT'>, Validators.required],
+    refundReference: ['', [Validators.maxLength(100)]],
+    confirmExternalRefund: [false],
+    notes: ['', [Validators.maxLength(1000)]]
   });
 
   get productLines(): FormArray { return this.form.controls.products as FormArray; }
@@ -206,11 +228,43 @@ export class SalesPageComponent implements OnInit {
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: response => {
-          this.rows.set(response.content ?? []);
+          const pageRows = response.content ?? [];
+          this.rows.set(pageRows);
           this.totalPages.set(response.totalPages ?? 0);
           this.totalElements.set(response.totalElements ?? 0);
+          this.loadReturnStatuses(pageRows);
         }
       });
+  }
+
+  private loadReturnStatuses(sales: SaleResponse[]): void {
+    if (!sales.length) { this.returnStatusBySale.set({}); return; }
+    forkJoin(sales.map(sale => forkJoin({
+      invoice: this.service.get(sale.uuid),
+      returns: this.service.returns(sale.uuid)
+    }))).subscribe({
+      next: results => {
+        const statuses: Record<string,string> = {};
+        results.forEach((result, index) => {
+          const invoice = result.invoice;
+          const returned: Record<string,number> = {};
+          for (const ret of result.returns ?? []) {
+            for (const line of ret.products ?? []) {
+              const key = line.salesProductUuid;
+              if (key) returned[key] = (returned[key] ?? 0) + Number(line.quantity ?? 0);
+            }
+          }
+          const lines = invoice.products ?? [];
+          const returnedCount = lines.filter((line:any) => Number(returned[line.uuid] ?? 0) > 0).length;
+          const allReturned = lines.length > 0 && lines.every((line:any) =>
+            Number(returned[line.uuid] ?? 0) >= Number(line.quantity ?? 0)
+          );
+          statuses[sales[index].uuid] = returnedCount === 0 ? 'NO_RETURNS' : allReturned ? 'FULLY_RETURNED' : 'PARTIALLY_RETURNED';
+        });
+        this.returnStatusBySale.set(statuses);
+      },
+      error: () => this.returnStatusBySale.set({})
+    });
   }
 
   applyFilters(): void { this.page.set(0); this.load(); }
@@ -328,12 +382,57 @@ export class SalesPageComponent implements OnInit {
   }
 
   openDetails(uuid: string): void {
+    this.cancellationDetails.set(null);
+    this.saleReturns.set([]);
     this.service.get(uuid).subscribe({
-      next: sale => this.selectedSale.set(sale)
+      next: sale => {
+        this.selectedSale.set(sale);
+        if (sale.status === 'CANCELLED') {
+          this.loadCancellationDetails(sale.uuid);
+        } else {
+          this.service.returns(sale.uuid).subscribe({
+            next: returns => this.saleReturns.set(returns ?? []),
+            error: () => this.saleReturns.set([])
+          });
+        }
+      }
     });
   }
 
-  closeDetails(): void { this.selectedSale.set(null); }
+  private loadCancellationDetails(uuid: string): void {
+    this.service.getCancellation(uuid).subscribe({
+      next: details => this.cancellationDetails.set(details),
+      error: () => this.cancellationDetails.set(null)
+    });
+  }
+
+  closeDetails(): void {
+    this.selectedSale.set(null);
+    this.cancellationDetails.set(null);
+    this.saleReturns.set([]);
+  }
+
+  returnedQuantity(salesProductUuid: string): number {
+    return this.saleReturns().reduce((total, ret) => total + (ret.products ?? [])
+      .filter((line: any) => line.salesProductUuid === salesProductUuid)
+      .reduce((lineTotal: number, line: any) => lineTotal + Number(line.quantity ?? 0), 0), 0);
+  }
+
+  netQuantity(item: { uuid: string; quantity: number }): number {
+    return Math.max(0, Number(item.quantity ?? 0) - this.returnedQuantity(item.uuid));
+  }
+
+  totalReturnCredit(): number {
+    return this.saleReturns().reduce((total, ret) => total + Number(ret.totalReturnAmount ?? 0), 0);
+  }
+
+  netInvoiceValue(grandTotal: number): number {
+    return Math.max(0, Number(grandTotal ?? 0) - this.totalReturnCredit());
+  }
+
+  negativeAmount(value: number): number {
+    return -Math.abs(Number(value ?? 0));
+  }
 
   completeSale(sale: SaleResponse): void {
     if (!this.canComplete() || sale.status !== 'DRAFT') return;
@@ -348,6 +447,10 @@ export class SalesPageComponent implements OnInit {
   }
 
   cancelSale(sale: SaleResponse): void {
+    if (sale.status === 'COMPLETED') {
+      this.openCancelDialog(sale);
+      return;
+    }
     if (!this.canCancel() || sale.status !== 'DRAFT') return;
     const reason = window.prompt(`Enter cancellation reason for ${sale.invoiceNumber}:`);
     if (reason === null) return;
@@ -362,6 +465,123 @@ export class SalesPageComponent implements OnInit {
         this.load();
       }
     });
+  }
+
+  openCancelDialog(sale: SaleResponse): void {
+    if (!this.canCancelIssued() || sale.status !== 'COMPLETED' || this.cancelling()) return;
+    this.cancelPreview.set(null);
+    this.cancelPreviewLoading.set(true);
+    this.showCancelDialog.set(true);
+    this.cancelForm.reset({
+      reason: '',
+      refundMethod: 'CASH',
+      refundReference: '',
+      confirmExternalRefund: false,
+      notes: ''
+    });
+    this.service.cancellationPreview(sale.uuid)
+      .pipe(finalize(() => this.cancelPreviewLoading.set(false)))
+      .subscribe({
+        next: preview => {
+          this.cancelPreview.set(preview);
+          const firstNonCredit = preview.originalPayments.find(p => p.paymentMethod !== 'CREDIT');
+          if (firstNonCredit && firstNonCredit.paymentMethod !== 'CREDIT') {
+            this.cancelForm.patchValue({
+              refundMethod: firstNonCredit.paymentMethod
+            });
+          }
+        },
+        error: () => {
+          this.showCancelDialog.set(false);
+        }
+      });
+  }
+
+  closeCancelDialog(): void {
+    if (!this.cancelling()) {
+      this.showCancelDialog.set(false);
+      this.cancelPreview.set(null);
+    }
+  }
+
+  submitCancelIssued(): void {
+    const preview = this.cancelPreview();
+    if (!preview || !preview.eligibleForCancellation || this.cancelling()) return;
+
+    const raw = this.cancelForm.getRawValue();
+    const trimmedReason = (raw.reason ?? '').trim();
+    if (!trimmedReason) {
+      this.cancelForm.controls.reason.setValue('');
+      this.cancelForm.controls.reason.markAsTouched();
+      this.toast.error('Cancellation reason is required.');
+      return;
+    }
+    if (trimmedReason.length > 500) {
+      this.toast.error('Cancellation reason must not exceed 500 characters.');
+      return;
+    }
+
+    const request: SalesCancelRequest = {
+      reason: trimmedReason,
+      idempotencyKey: typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${preview.saleUuid}-${Date.now()}`,
+      notes: raw.notes?.trim() || undefined
+    };
+
+    if (preview.refundableAmount > 0) {
+      request.refundMethod = raw.refundMethod ?? 'CASH';
+      if (raw.refundReference?.trim()) {
+        request.refundReference = raw.refundReference.trim();
+      }
+      if (request.refundMethod !== 'CASH' && raw.confirmExternalRefund) {
+        if (!request.refundReference) {
+          this.toast.error('Enter a refund reference number to confirm an external refund.');
+          return;
+        }
+        request.confirmExternalRefund = true;
+      }
+    }
+
+    this.cancelling.set(true);
+    this.service.cancel(preview.saleUuid, request)
+      .pipe(finalize(() => this.cancelling.set(false)))
+      .subscribe({
+        next: updated => {
+          this.showCancelDialog.set(false);
+          this.cancelPreview.set(null);
+          if (this.selectedSale()?.uuid === updated.uuid) {
+            this.selectedSale.set(updated);
+            this.loadCancellationDetails(updated.uuid);
+          }
+          this.toast.success(`Invoice ${updated.invoiceNumber} cancelled.`, 'Invoice cancelled');
+          this.load();
+        }
+      });
+  }
+
+  confirmExternalRefund(saleUuid: string, refund: SalesCancellationRefundResponse): void {
+    if (!this.canCancelIssued() || this.confirmingRefundUuid()) return;
+    const reference = window.prompt(
+      `Enter provider refund reference for ${this.paymentMethodLabel(refund.paymentMethod)} (${this.money(refund.amount)}):`,
+      refund.referenceNumber ?? ''
+    );
+    if (reference === null) return;
+    if (!reference.trim()) {
+      this.toast.error('Provider reference number is required to confirm refund.');
+      return;
+    }
+    this.confirmingRefundUuid.set(refund.uuid);
+    this.service.confirmCancellationRefund(saleUuid, refund.uuid, {
+      status: 'SUCCESSFUL',
+      referenceNumber: reference.trim()
+    }).pipe(finalize(() => this.confirmingRefundUuid.set(null)))
+      .subscribe({
+        next: updated => {
+          this.cancellationDetails.set(updated);
+          this.toast.success('Refund confirmed.', 'Refund updated');
+        }
+      });
   }
 
   statusLabel(value: string | null | undefined): string {
@@ -411,7 +631,7 @@ export class SalesPageComponent implements OnInit {
       ${['ORIGINAL FOR RECIPIENT','DUPLICATE FOR TRANSPORTER'].map(copy => `
       <section class="copy"><header class="center"><h1>Guhan Auto Spares</h1>
       <div class="gst">GSTIN: TO BE CONFIGURED · Tamil Nadu, India</div>
-      <div class="muted">TAX INVOICE</div><strong>${copy}</strong></header>
+      <div class="muted">${sale.status === 'CANCELLED' ? 'CANCELLED TAX INVOICE' : 'TAX INVOICE'}</div><strong>${copy}</strong></header>
       <div class="meta"><div><b>Invoice No:</b> ${escapeHtml(sale.invoiceNumber)}<br><b>Date:</b> ${escapeHtml(sale.saleDate)}</div>
       <div><b>Bill To:</b> ${escapeHtml(sale.customerName || 'Walk-in customer')}<br><b>Customer GSTIN:</b> __________________</div></div>
       <table><thead><tr><th>Description</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">GST</th><th class="right">Tax</th><th class="right">Amount</th></tr></thead><tbody>${rows}</tbody></table>
@@ -439,7 +659,7 @@ export class SalesPageComponent implements OnInit {
   }
 
   openPayment(sale: SaleResponse): void {
-    if (!this.canPay() || sale.status !== 'COMPLETED' || sale.balanceAmount <= 0) return;
+    if (!this.canPay() || !['DRAFT', 'COMPLETED'].includes(sale.status) || sale.balanceAmount <= 0) return;
     this.paymentForm.reset({ paymentMethod: 'CASH', amount: sale.balanceAmount, referenceNumber: '', notes: '' });
     this.showPayment.set(true);
   }

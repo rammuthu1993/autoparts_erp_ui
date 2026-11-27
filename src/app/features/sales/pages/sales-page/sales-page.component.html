@@ -53,7 +53,8 @@
             <th class="numeric">Balance</th>
             <th>Status</th>
             <th>Payment</th>
-            <th></th>
+            <th>Return status</th>
+            <th class="actions-heading">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -72,15 +73,27 @@
             <td><span class="payment-pill" [class.unpaid]="sale.paymentStatus === 'UNPAID'">
                 {{ sale.status === 'DRAFT' || sale.status === 'CANCELLED' ? '—' : paymentStatusLabel(sale.paymentStatus) }}
               </span></td>
+            <td><span class="status-pill" [class.cancelled]="returnStatusBySale()[sale.uuid] === 'FULLY_RETURNED'">
+              {{ sale.status === 'DRAFT' || sale.status === 'CANCELLED' ? '—' :
+                 returnStatusBySale()[sale.uuid] === 'FULLY_RETURNED' ? 'Fully returned' :
+                 returnStatusBySale()[sale.uuid] === 'PARTIALLY_RETURNED' ? 'Partially returned' :
+                 returnStatusBySale()[sale.uuid] === 'NO_RETURNS' ? 'No returns' : 'Loading…' }}
+            </span></td>
             <td class="row-actions">
               <button class="icon-action" type="button" (click)="openDetails(sale.uuid)"
                 title="View invoice" aria-label="View invoice">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
-              @if (sale.status === 'COMPLETED') {
+              @if (sale.status === 'COMPLETED' || sale.status === 'CANCELLED') {
                 <button class="icon-action" type="button" (click)="printInvoiceByUuid(sale.uuid)"
-                  title="Print invoice" aria-label="Print invoice">
+                  data-tooltip="Print invoice" aria-label="Print invoice">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v7H7zM17 11h.01"/></svg>
+                </button>
+              }
+              @if (sale.status === 'COMPLETED' && canCancelIssued()) {
+                <button class="icon-action danger-icon" type="button" (click)="openCancelDialog(sale)"
+                  data-tooltip="Cancel invoice" aria-label="Cancel invoice">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
                 </button>
               }
             </td>
@@ -88,7 +101,7 @@
           } @empty {
           @if (!loading()) {
           <tr>
-            <td colspan="9" class="empty-cell">
+            <td colspan="10" class="empty-cell">
               <div class="empty-state"><strong>No sales invoices found</strong><span>Create a sale to start your invoice
                   register.</span></div>
             </td>
@@ -259,7 +272,9 @@
         <thead>
           <tr>
             <th>Product</th>
-            <th>Qty</th>
+            <th>Sold qty</th>
+            <th>Returned</th>
+            <th>Net qty</th>
             <th>Unit price</th>
             <th>Tax</th>
             <th>Total</th>
@@ -270,6 +285,8 @@
             <td><strong>{{ item.productName }}</strong><small>{{ item.productCode }}{{ item.hsnCode ? ' · HSN ' + item.hsnCode : '' }}</small>
             </td>
             <td>{{ item.quantity }} {{ item.unit }}</td>
+            <td>{{ returnedQuantity(item.uuid) }} {{ item.unit }}</td>
+            <td><strong>{{ netQuantity(item) }} {{ item.unit }}</strong></td>
             <td>{{ money(item.unitPrice) }}</td>
             <td>{{ money(item.totalTaxAmount) }}</td>
             <td>{{ money(item.lineTotal) }}</td>
@@ -287,6 +304,57 @@
       <div><span>Round off</span><strong>{{ money(sale.roundOffAmount) }}</strong></div>
       <div class="grand-total"><span>Grand total</span><strong>{{ money(sale.grandTotal) }}</strong></div>
     </div>
+    @if (saleReturns().length) {
+      <section class="return-history-box">
+        <h3>Sales returns and refunds</h3>
+        @for (ret of saleReturns(); track ret.uuid) {
+          <div class="return-history-card">
+            <div class="return-history-heading">
+              <strong>{{ ret.returnNumber || 'Sales return' }}</strong>
+              <span>{{ ret.returnDate | date:'dd MMM yyyy, hh:mm a' }}</span>
+            </div>
+            @if (ret.reason) { <p>{{ ret.reason }}</p> }
+            <div class="table-scroll detail-table">
+              <table>
+                <thead><tr><th>Returned product</th><th>Qty</th><th>Unit price</th><th>Return value</th></tr></thead>
+                <tbody>
+                  @for (line of ret.products ?? []; track line.uuid) {
+                    <tr>
+                      <td><strong>{{ line.productName }}</strong><small>{{ line.productCode }}</small></td>
+                      <td>{{ line.quantity }} {{ line.unit }}</td>
+                      <td>{{ money(line.unitPrice) }}</td>
+                      <td>{{ money(line.lineTotal) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div class="return-financial-summary">
+              <span>Credit note value <strong>{{ money(negativeAmount(ret.totalReturnAmount)) }}</strong></span>
+              <span>Refunded <strong>{{ money(ret.refundedAmount) }}</strong></span>
+              <span>Refund due <strong>{{ money(ret.refundableAmount) }}</strong></span>
+            </div>
+            @if (ret.refunds?.length) {
+              <div class="payment-list">
+                @for (refund of ret.refunds; track refund.uuid) {
+                  <div>
+                    <span>{{ paymentMethodLabel(refund.paymentMethod) }} · {{ refund.refundDate | date:'dd MMM yyyy, hh:mm a' }}@if (refund.referenceNumber) { · Ref: {{ refund.referenceNumber }} }</span>
+                    <strong>{{ money(refund.amount) }}</strong>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+        <div class="return-financial-summary return-net-total">
+          <span>Total return credit <strong>{{ money(negativeAmount(totalReturnCredit())) }}</strong></span>
+          <span>Net invoice value after returns <strong>{{ money(netInvoiceValue(sale.grandTotal)) }}</strong></span>
+        </div>
+      </section>
+    } @else if (sale.status === 'COMPLETED') {
+      <p class="muted">No sales returns recorded for this invoice.</p>
+    }
+
     <h3>Payments</h3>
     @if (sale.payments.length) {
     <div class="payment-list">@for (payment of sale.payments; track payment.uuid) {
@@ -295,13 +363,77 @@
       }
     </div>
     } @else { <p class="muted">No payments recorded.</p> }
+
+    @if (sale.status === 'CANCELLED') {
+    <div class="cancellation-history-box">
+      <h3>Cancellation details</h3>
+      @if (cancellationDetails(); as canc) {
+      <div class="cancellation-meta">
+        <div><span>Reason</span><strong>{{ canc.cancellationReason }}</strong></div>
+        <div><span>Cancelled by</span><strong>{{ canc.cancelledByUsername }} · {{ canc.cancelledAt | date:'dd MMM yyyy, hh:mm a' }}</strong></div>
+        <div><span>Receivable reversed</span><strong>{{ money(canc.receivableAdjustmentAmount) }}</strong></div>
+        <div><span>Refund amount</span><strong>{{ money(canc.refundAmount) }} ({{ canc.refundStatus }})</strong></div>
+        <div><span>GST adjustment</span><strong>{{ canc.gstAdjustmentType }}@if (canc.gstAdjustmentReference) { · {{ canc.gstAdjustmentReference }} }</strong></div>
+      </div>
+      @if (canc.items.length) {
+      <div class="table-scroll detail-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Sold</th>
+              <th>Prev. returned</th>
+              <th>Restored</th>
+            </tr>
+          </thead>
+          <tbody>@for (item of canc.items; track item.uuid) {
+            <tr>
+              <td><strong>{{ item.productName }}</strong><small>{{ item.productCode }}</small></td>
+              <td>{{ item.originalQuantity }} {{ item.unit }}</td>
+              <td>{{ item.previouslyReturnedQuantity }} {{ item.unit }}</td>
+              <td><strong>{{ item.restoredQuantity }} {{ item.unit }}</strong></td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      }
+      @if (canc.refunds.length) {
+      <div class="payment-list">@for (ref of canc.refunds; track ref.uuid) {
+        <div>
+          <span>{{ paymentMethodLabel(ref.paymentMethod) }} · {{ ref.status }}@if (ref.referenceNumber) { · Ref: {{ ref.referenceNumber }} }</span>
+          <span class="refund-action-cell">
+            <strong>{{ money(ref.amount) }}</strong>
+            @if (ref.status === 'PENDING' && canCancelIssued()) {
+            <button class="secondary-button compact-button" type="button"
+              [disabled]="confirmingRefundUuid() === ref.uuid"
+              (click)="confirmExternalRefund(sale.uuid, ref)">Confirm</button>
+            }
+          </span>
+        </div>
+        }
+      </div>
+      }
+      } @else if (sale.cancellationReason) {
+      <p class="muted">Reason: {{ sale.cancellationReason }}</p>
+      }
+    </div>
+    }
+
     <footer class="modal-footer action-footer">
       @if (sale.status === 'DRAFT' && canComplete()) { <button class="primary-button" type="button"
         (click)="completeSale(sale)">Complete invoice</button> }
-      @if (sale.status === 'DRAFT' && canCancel()) { <button class="danger-button" type="button"
-        (click)="cancelSale(sale)">Cancel draft</button> }
-      @if (sale.status === 'COMPLETED' && sale.balanceAmount > 0 && canPay()) { <button class="primary-button"
-        type="button" (click)="openPayment(sale)">Record payment</button> }
+      @if ((sale.status === 'DRAFT' || sale.status === 'COMPLETED') && sale.balanceAmount > 0 && canPay()) {
+        <button class="primary-button" type="button" (click)="openPayment(sale)">Record payment</button>
+      }  
+      @if (sale.status === 'DRAFT' && canCancel() && sale.paidAmount <= 0) {
+        <button class="danger-button" type="button" (click)="cancelSale(sale)">Cancel draft</button>
+      }
+      @if (sale.status === 'DRAFT' && sale.paidAmount > 0) {
+        <span class="muted">This draft has an advance payment. Complete the invoice before processing a refund.</span>
+      }
+      @if (sale.status === 'COMPLETED' && canCancelIssued()) { <button class="danger-button" type="button"
+        (click)="openCancelDialog(sale)">Cancel invoice</button> }
       <button class="secondary-button" type="button" (click)="closeDetails()">Close</button>
     </footer>
   </section>
@@ -314,8 +446,8 @@
     (click)="$event.stopPropagation()">
     <header class="modal-header">
       <div>
-        <div class="eyebrow">PAYMENT COLLECTION</div>
-        <h2>Record payment</h2>
+        <div class="eyebrow">{{ sale.status === 'DRAFT' ? 'ADVANCE COLLECTION' : 'PAYMENT COLLECTION' }}</div>
+        <h2>{{ sale.status === 'DRAFT' ? 'Record advance payment' : 'Record payment' }}</h2>
         <p>{{ sale.invoiceNumber }} · Outstanding {{ money(sale.balanceAmount) }}</p>
       </div>
       <button class="close-button" type="button" (click)="closePayment()">×</button>
@@ -338,6 +470,125 @@
           'Record payment' }}</button>
       </footer>
     </form>
+  </section>
+</div>
+}
+
+@if (showCancelDialog()) {
+<div class="modal-backdrop nested-backdrop" (click)="closeCancelDialog()">
+  <section class="modal details-modal" role="dialog" aria-modal="true" aria-label="Cancel issued invoice"
+    (click)="$event.stopPropagation()">
+    <header class="modal-header">
+      <div>
+        <div class="eyebrow">FULL INVOICE CANCELLATION</div>
+        @if (cancelPreview(); as preview) {
+        <h2>Cancel {{ preview.invoiceNumber }}</h2>
+        <p>{{ preview.customerName || 'Walk-in customer' }} · {{ preview.saleDate | date:'dd MMM yyyy' }}</p>
+        } @else {
+        <h2>Loading cancellation impact...</h2>
+        }
+      </div>
+      <button class="close-button" type="button" (click)="closeCancelDialog()">×</button>
+    </header>
+
+    @if (cancelPreviewLoading()) {
+    <p class="muted">Calculating stock restoration, refund, receivable, and GST adjustments...</p>
+    } @else if (cancelPreview(); as preview) {
+    <div class="summary-grid">
+      <div><span>Invoice total</span><strong>{{ money(preview.grandTotal) }}</strong></div>
+      <div><span>Previously paid</span><strong>{{ money(preview.previouslyPaidAmount) }}</strong></div>
+      <div><span>Previously returned</span><strong>{{ money(preview.previouslyReturnedAmount) }}</strong></div>
+      <div><span>Outstanding</span><strong>{{ money(preview.outstandingAmount) }}</strong></div>
+      <div><span>Receivable reversed</span><strong>{{ money(preview.receivableAdjustmentAmount) }}</strong></div>
+      <div><span>Refundable amount</span><strong class="balance-due">{{ money(preview.refundableAmount) }}</strong></div>
+    </div>
+
+    @if (preview.warnings.length) {
+    <ul class="cancel-warning-list">
+      @for (w of preview.warnings; track w) {
+      <li>{{ w }}</li>
+      }
+    </ul>
+    }
+
+    @if (!preview.eligibleForCancellation) {
+    <p class="field-error">{{ preview.ineligibilityReason || 'This invoice is not eligible for cancellation.' }}</p>
+    }
+
+    <h3>Stock to be restored</h3>
+    <div class="table-scroll detail-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Sold</th>
+            <th>Returned</th>
+            <th>To restore</th>
+          </tr>
+        </thead>
+        <tbody>@for (item of preview.items; track item.salesProductUuid) {
+          <tr>
+            <td><strong>{{ item.productName }}</strong><small>{{ item.productCode }}</small></td>
+            <td>{{ item.originalQuantity }} {{ item.unit }}</td>
+            <td>{{ item.previouslyReturnedQuantity }} {{ item.unit }}</td>
+            <td><strong>{{ item.remainingQuantityToRestore }} {{ item.unit }}</strong></td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="totals">
+      <div><span>GST adjustment</span><strong>{{ preview.gstAdjustmentType }}</strong></div>
+      <div><span>Taxable reversed</span><strong>{{ money(preview.taxableReversed) }}</strong></div>
+      <div><span>Tax reversed</span><strong>{{ money(preview.totalTaxReversed) }}</strong></div>
+    </div>
+
+    <form class="modal-form" [formGroup]="cancelForm" (ngSubmit)="submitCancelIssued()">
+      <div class="form-grid">
+        <label class="form-field full-width">
+          <span>Cancellation reason *</span>
+          <textarea rows="2" formControlName="reason" placeholder="Reason for cancelling this issued invoice" maxlength="500"></textarea>
+          @if (cancelForm.controls.reason.touched && cancelForm.controls.reason.invalid) {
+          <small class="field-error">A cancellation reason (max 500 characters) is required.</small>
+          }
+        </label>
+
+        @if (preview.refundableAmount > 0) {
+        <label class="form-field">
+          <span>Refund method</span>
+          <select formControlName="refundMethod">
+            @for (m of refundMethods; track m) {
+            <option [value]="m">{{ paymentMethodLabel(m) }}</option>
+            }
+          </select>
+        </label>
+        <label class="form-field">
+          <span>Refund reference</span>
+          <input formControlName="refundReference" placeholder="UPI / card / bank reference" maxlength="100">
+        </label>
+        @if (cancelForm.controls.refundMethod.value !== 'CASH') {
+        <label class="form-field full-width checkbox-field">
+          <input type="checkbox" formControlName="confirmExternalRefund">
+          <span>Mark external refund as already confirmed with provider reference</span>
+        </label>
+        }
+        }
+
+        <label class="form-field full-width">
+          <span>Notes</span>
+          <textarea rows="2" formControlName="notes" placeholder="Optional internal notes" maxlength="1000"></textarea>
+        </label>
+      </div>
+
+      <footer class="modal-footer">
+        <button class="secondary-button" type="button" (click)="closeCancelDialog()" [disabled]="cancelling()">Back</button>
+        <button class="danger-button" type="submit" [disabled]="cancelling() || !preview.eligibleForCancellation">
+          {{ cancelling() ? 'Cancelling...' : 'Confirm cancel invoice' }}
+        </button>
+      </footer>
+    </form>
+    }
   </section>
 </div>
 }

@@ -3,7 +3,9 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { API_BASE_URL } from '../../../core/http/api/api-config';
 import {
-  CustomerLookup, PageResponse, ProductLookup, SaleCreateRequest, SalePaymentRequest, SaleResponse, SalesStatusOption
+  CustomerLookup, PageResponse, ProductLookup, SaleCreateRequest, SalePaymentRequest, SaleResponse,
+  SalesCancelRequest, SalesCancellationPreviewResponse, SalesCancellationRefundConfirmRequest,
+  SalesCancellationResponse, SalesStatusOption
 } from '../models/sales.model';
 
 @Injectable({ providedIn: 'root' })
@@ -33,6 +35,10 @@ export class SalesService {
     return this.http.get<SaleResponse>(`${this.base}/sales/${uuid}`);
   }
 
+  returns(uuid: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/sales/${uuid}/returns`);
+  }
+
   create(request: SaleCreateRequest): Observable<SaleResponse> {
     return this.http.post<SaleResponse>(`${this.base}/sales`, request);
   }
@@ -41,8 +47,28 @@ export class SalesService {
     return this.http.post<SaleResponse>(`${this.base}/sales/${uuid}/complete`, {});
   }
 
-  cancel(uuid: string, reason: string): Observable<SaleResponse> {
-    return this.http.post<SaleResponse>(`${this.base}/sales/${uuid}/cancel`, { reason });
+  cancel(uuid: string, request: string | SalesCancelRequest): Observable<SaleResponse> {
+    const payload: SalesCancelRequest = typeof request === 'string' ? { reason: request } : request;
+    return this.http.post<SaleResponse>(`${this.base}/sales/${uuid}/cancel`, payload);
+  }
+
+  cancellationPreview(uuid: string): Observable<SalesCancellationPreviewResponse> {
+    return this.http.get<SalesCancellationPreviewResponse>(`${this.base}/sales/${uuid}/cancellation-preview`);
+  }
+
+  getCancellation(uuid: string): Observable<SalesCancellationResponse> {
+    return this.http.get<SalesCancellationResponse>(`${this.base}/sales/${uuid}/cancellation`);
+  }
+
+  confirmCancellationRefund(
+    saleUuid: string,
+    refundUuid: string,
+    request: SalesCancellationRefundConfirmRequest
+  ): Observable<SalesCancellationResponse> {
+    return this.http.post<SalesCancellationResponse>(
+      `${this.base}/sales/${saleUuid}/cancellation/refunds/${refundUuid}/confirm`,
+      request
+    );
   }
 
   recordPayment(uuid: string, request: SalePaymentRequest): Observable<SaleResponse> {

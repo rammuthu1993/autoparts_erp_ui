@@ -57,12 +57,12 @@
       <article class="kpi-card">
         <div class="kpi-top">
           <span class="kpi-icon collection-icon"><app-icon name="wallet" [size]="19" /></span>
-          <span class="kpi-label">Collections received</span>
+          <span class="kpi-label">Net collections</span>
         </div>
-        <div class="kpi-value">{{ sales()?.collectionTotal ?? 0 | currency:'INR':'symbol':'1.0-0' }}</div>
+        <div class="kpi-value">{{ sales()?.netCollectionTotal ?? sales()?.collectionTotal ?? 0 | currency:'INR':'symbol':'1.0-0' }}</div>
         <div class="kpi-bottom">
-          <span class="kpi-context">Paid against invoices</span>
-          <strong>{{ sales()?.invoicePaidAmount ?? 0 | currency:'INR':'symbol':'1.0-0' }}</strong>
+          <span class="kpi-context">Gross {{ sales()?.collectionTotal ?? 0 | currency:'INR':'symbol':'1.0-0' }} · Refunds {{ sales()?.refundTotal ?? 0 | currency:'INR':'symbol':'1.0-0' }}</span>
+          <strong>Net after refunds</strong>
         </div>
       </article>
 
@@ -120,7 +120,7 @@
         <div class="panel-heading">
           <div>
             <h2>Sales collection mix</h2>
-            <p>Collections grouped by payment method</p>
+            <p>Gross collections grouped by payment method (before refunds)</p>
           </div>
           <span class="panel-icon"><app-icon name="chart" [size]="18" /></span>
         </div>

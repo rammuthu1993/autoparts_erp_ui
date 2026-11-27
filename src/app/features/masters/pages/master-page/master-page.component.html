@@ -6,7 +6,7 @@
       <p>Manage your {{ config().title.toLowerCase() }} and keep business records accurate.</p>
     </div>
     @if (canCreate()) {
-      <button class="primary-button" type="button" (click)="openCreate()">＋ Add {{ config().singular }}</button>
+      <button class="primary-button" type="button" (click)="openCreate()" [attr.data-tooltip]="'Add ' + config().singular">＋ Add {{ config().singular }}</button>
     }
   </div>
 
@@ -47,12 +47,13 @@
               @if (config().type === 'products' || canUpdate() || canDeactivate()) {
                 <td class="row-actions">
                   @if (config().type === 'products' && row.uuid) {
-                    <button class="text-button" type="button" (click)="openBarcode(row)">Barcode</button>
+                    <button class="icon-action" type="button" [attr.data-tooltip]="'View product details'" aria-label="View product details" (click)="openProductView(row)">◉</button>
+                    <button class="icon-action" type="button" [attr.data-tooltip]="'View barcode'" aria-label="View barcode" (click)="openBarcode(row)">▥</button>
                   }
                   @if (row.uuid) {
-                    @if (canUpdate()) { <button class="text-button" type="button" (click)="openEdit(row)">Edit</button> }
+                    @if (canUpdate()) { <button class="icon-action" type="button" [attr.data-tooltip]="'Edit product'" aria-label="Edit" (click)="openEdit(row)">✎</button> }
                     @if (canDeactivate() && row.active !== false) {
-                      <button class="text-button danger-text" type="button" (click)="deactivate(row)">Deactivate</button>
+                      <button class="icon-action danger-text" type="button" [attr.data-tooltip]="'Deactivate product'" aria-label="Deactivate" (click)="deactivate(row)">⊘</button>
                     }
                   } @else {
                     <span class="unavailable-action">Unavailable</span>
@@ -128,12 +129,38 @@
           }
         </div>
         <footer class="modal-footer">
-          <button class="secondary-button" type="button" (click)="closeForm()" [disabled]="submitting()">Cancel</button>
+          <button class="secondary-button" type="button" (click)="closeForm()" [disabled]="submitting()" [attr.data-tooltip]="'Close without saving'">✕ Cancel</button>
           <button class="primary-button" type="submit" [disabled]="submitting()">
             {{ submitting() ? 'Saving...' : (editingUuid() ? 'Save changes' : 'Create ' + config().singular) }}
           </button>
         </footer>
       </form>
+    </section>
+  </div>
+}
+
+@if (selectedProduct(); as product) {
+  <div class="modal-backdrop" (click)="closeProductView()">
+    <section class="barcode-modal product-detail-modal" role="dialog" aria-modal="true" aria-label="Product details" (click)="$event.stopPropagation()">
+      <header class="modal-header">
+        <div><div class="eyebrow">PRODUCT DETAILS</div><h2>{{ product['name'] }}</h2></div>
+        <button class="icon-action" type="button" [attr.data-tooltip]="'Close'" aria-label="Close" (click)="closeProductView()">×</button>
+      </header>
+      <div class="product-detail-grid">
+        <div><span>Product code</span><strong>{{ product['productCode'] || '—' }}</strong></div>
+        <div><span>Part number</span><strong>{{ product['partNo'] || '—' }}</strong></div>
+        <div><span>Barcode</span><strong>{{ product['barcode'] || '—' }}</strong></div>
+        <div><span>Category</span><strong>{{ product['categoryName'] || '—' }}</strong></div>
+        <div><span>Brand</span><strong>{{ product['brandName'] || '—' }}</strong></div>
+        <div><span>Unit</span><strong>{{ product['unit'] || '—' }}</strong></div>
+        <div><span>Purchase price</span><strong>{{ product['purchasePrice'] ?? '—' }}</strong></div>
+        <div><span>Selling price</span><strong>{{ product['sellingPrice'] ?? '—' }}</strong></div>
+        <div><span>GST rate</span><strong>{{ product['gstRate'] ?? '—' }}</strong></div>
+        <div><span>HSN code</span><strong>{{ product['hsnCode'] || '—' }}</strong></div>
+        <div><span>Minimum stock</span><strong>{{ product['minimumStock'] ?? '—' }}</strong></div>
+        <div><span>Status</span><strong>{{ product['active'] ? 'Active' : 'Inactive' }}</strong></div>
+      </div>
+      <footer class="modal-actions"><button class="secondary-button" type="button" [attr.data-tooltip]="'Close details'" (click)="closeProductView()">Close</button></footer>
     </section>
   </div>
 }
@@ -157,9 +184,9 @@
         <span class="barcode-type">{{ barcode.barcodeType }} · SCANNER-READABLE</span>
       </div>
       <footer class="modal-footer">
-        <button class="secondary-button" type="button" (click)="closeBarcode()">Close</button>
-        <button class="secondary-button" type="button" (click)="downloadBarcode()">Download PNG</button>
-        <button class="primary-button" type="button" (click)="printBarcode()">Print barcode</button>
+        <button class="secondary-button" type="button" (click)="closeBarcode()" [attr.data-tooltip]="'Close barcode'">✕ Close</button>
+        <button class="secondary-button" type="button" (click)="downloadBarcode()" [attr.data-tooltip]="'Download barcode image'">⇩ Download PNG</button>
+        <button class="primary-button" type="button" (click)="printBarcode()" [attr.data-tooltip]="'Print barcode'">▤ Print barcode</button>
       </footer>
     </section>
   </div>
