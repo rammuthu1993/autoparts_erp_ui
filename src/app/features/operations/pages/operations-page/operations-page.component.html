@@ -95,89 +95,25 @@
 </section>
 
 @if (showForm() && type() === 'purchases') {
-  <div class="backdrop" (click)="showForm.set(false)"><section class="modal wide" (click)="$event.stopPropagation()">
-    <header><div><h2>Create purchase draft</h2><p>Enter the supplier invoice details and purchased items.</p></div><button class="close" type="button" (click)="showForm.set(false)">×</button></header>
-    <form [formGroup]="purchaseForm" (ngSubmit)="createPurchase()">
-      <div class="form-grid">
-        <label>Supplier *<select formControlName="supplierId"><option [ngValue]="null">Select supplier</option>@for (s of suppliers(); track s.id) { <option [ngValue]="s.id">{{ s.supplierName }}</option> }</select></label>
-        <label>Supplier invoice no. *<input formControlName="supplierInvoiceNo"></label>
-        <label>Purchase date *<input type="date" formControlName="purchaseDate"></label>
-        <label>Notes<input formControlName="notes"></label>
-      </div>
-      <div class="line-title"><strong>Purchase items</strong><button type="button" class="secondary" (click)="addPurchaseLine()">+ Add item</button></div>
-      <div formArrayName="products" class="line-list">
-        @for (line of purchaseLines.controls; let i = $index; track i) {
-          <div class="purchase-line" [formGroupName]="i">
-            <label class="product-select">Product *<select formControlName="productId" (change)="onPurchaseProductSelected(i)"><option [ngValue]="null">Select product</option>@for (p of products(); track p.id) { <option [ngValue]="p.id">{{ p.productCode }} · {{ p.name }}</option> }</select></label>
-            <label>Qty *<input type="number" min="0.001" step="0.001" formControlName="quantity"></label>
-            <label>Unit cost *<input type="number" min="0" step="0.01" formControlName="purchasePrice"></label>
-            <label>Discount *<input type="number" min="0" step="0.01" formControlName="discountAmount"></label>
-            <label>GST % *<input type="number" min="0" max="100" step="0.01" formControlName="taxPercent"></label>
-            <button type="button" class="remove" (click)="removePurchaseLine(i)" [disabled]="purchaseLines.length===1">×</button>
-          </div>
-        }
-      </div>
-      <footer><button type="button" class="secondary" (click)="showForm.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Create draft' }}</button></footer>
-    </form>
-  </section></div>
+  <app-purchase-draft-dialog [vm]="this" />
 }
 
 @if (showAdjust() && selected(); as stock) {
-  <div class="backdrop" (click)="showAdjust.set(false)"><section class="modal" (click)="$event.stopPropagation()">
-    <header><div><h2>Adjust stock</h2><p>{{ stock.productCode }} · {{ stock.productName }} · Current: {{ stock.quantity }} {{ stock.unit }}</p></div><button class="close" (click)="showAdjust.set(false)">×</button></header>
-    <form [formGroup]="adjustmentForm" (ngSubmit)="adjustStock()" class="form-grid">
-      <label>Quantity change *<input type="number" step="0.001" formControlName="quantityChange" placeholder="Positive to add, negative to reduce"></label>
-      <label>Reason *<input formControlName="reason" maxlength="250"></label>
-      <label class="wide-field">Notes<textarea formControlName="notes" rows="3"></textarea></label>
-      <footer class="wide-field"><button type="button" class="secondary" (click)="showAdjust.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">Save adjustment</button></footer>
-    </form>
-  </section></div>
+  <app-stock-adjustment-dialog [vm]="this" [stock]="stock" />
 }
 
 @if (selected(); as purchase) {
   @if (type() === 'purchases' && !showAdjust()) {
-    <div class="backdrop" (click)="selected.set(null)"><section class="modal" (click)="$event.stopPropagation()">
-      <header><div><h2>{{ purchase.purchaseNumber }}</h2><p>{{ purchase.supplierName }} · {{ purchase.supplierInvoiceNo }}</p></div><button class="close" (click)="selected.set(null)">×</button></header>
-      @if (purchase.products; as lines) { <div class="detail-lines">@for (line of lines; track line.uuid) { <div><span>{{ line.productName }} × {{ line.quantity }}</span><strong>{{ money(line.lineTotal) }}</strong></div> }</div> }
-      <div class="detail-total"><span>Grand total</span><strong>{{ money(purchase.grandTotal) }}</strong></div>
-      @if (canRecordPurchasePayment && purchase.status === 'RECEIVED') {
-        <form [formGroup]="paymentForm" (ngSubmit)="recordPurchasePayment()" class="form-grid payment-form">
-          <label>Payment method<select formControlName="paymentMethod"><option>CASH</option><option>UPI</option><option>CARD</option><option>BANK</option></select></label>
-          <label>Amount *<input type="number" min="0.01" step="0.01" formControlName="amount"></label>
-          <label class="wide-field">Reference<input formControlName="referenceNumber"></label>
-          <label class="wide-field">Notes<input formControlName="notes"></label>
-          <footer class="wide-field"><button class="primary" type="submit" [disabled]="saving()">Record supplier payment</button></footer>
-        </form>
-      }
-    </section></div>
+    <app-purchase-details-dialog [vm]="this" [purchase]="purchase" />
   }
 }
 
 @if (showOpenSession() && selectedRegister(); as register) {
-  <div class="backdrop" (click)="showOpenSession.set(false)"><section class="modal" (click)="$event.stopPropagation()">
-    <header><div><h2>Open cash session</h2><p>{{ register.registerCode }} · {{ register.name }}</p></div><button class="close" (click)="showOpenSession.set(false)">×</button></header>
-    <form [formGroup]="openingForm" (ngSubmit)="confirmOpenSession()" class="form-grid">
-      <label class="wide-field">Opening cash balance (₹) *<input type="number" min="0" step="0.01" formControlName="openingBalance"></label>
-      <footer class="wide-field"><button type="button" class="secondary" (click)="showOpenSession.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">Open session</button></footer>
-    </form>
-  </section></div>
+  <app-open-session-dialog [vm]="this" [register]="register" />
 }
 @if (showCloseSession() && selectedRegister(); as register) {
-  <div class="backdrop" (click)="showCloseSession.set(false)"><section class="modal" (click)="$event.stopPropagation()">
-    <header><div><h2>Close cash session</h2><p>{{ register.name }} · Count the physical cash before closing.</p></div><button class="close" (click)="showCloseSession.set(false)">×</button></header>
-    <form [formGroup]="closingForm" (ngSubmit)="confirmCloseSession()" class="form-grid">
-      <label class="wide-field">Actual closing cash (₹) *<input type="number" min="0" step="0.01" formControlName="actualClosingBalance"></label>
-      <footer class="wide-field"><button type="button" class="secondary" (click)="showCloseSession.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">Confirm close</button></footer>
-    </form>
-  </section></div>
+  <app-close-session-dialog [vm]="this" [register]="register" />
 }
 @if (showRegisterForm()) {
-  <div class="backdrop" (click)="showRegisterForm.set(false)"><section class="modal" (click)="$event.stopPropagation()">
-    <header><div><h2>Create cash register</h2><p>Register a physical billing counter.</p></div><button class="close" (click)="showRegisterForm.set(false)">×</button></header>
-    <form [formGroup]="registerForm" (ngSubmit)="createRegister()" class="form-grid">
-      <label>Register code *<input formControlName="registerCode"></label><label>Register name *<input formControlName="name"></label>
-      <label class="wide-field">Description<input formControlName="description"></label>
-      <footer class="wide-field"><button type="button" class="secondary" (click)="showRegisterForm.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="saving()">Create register</button></footer>
-    </form>
-  </section></div>
+  <app-cash-register-dialog [vm]="this" />
 }

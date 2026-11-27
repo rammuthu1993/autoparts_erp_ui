@@ -1,4 +1,10 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { CashRegisterDialogComponent } from '../../components/cash-register-dialog/cash-register-dialog.component';
+import { CloseSessionDialogComponent } from '../../components/close-session-dialog/close-session-dialog.component';
+import { OpenSessionDialogComponent } from '../../components/open-session-dialog/open-session-dialog.component';
+import { PurchaseDetailsDialogComponent } from '../../components/purchase-details-dialog/purchase-details-dialog.component';
+import { StockAdjustmentDialogComponent } from '../../components/stock-adjustment-dialog/stock-adjustment-dialog.component';
+import { PurchaseDraftDialogComponent } from '../../components/purchase-draft-dialog/purchase-draft-dialog.component';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -21,7 +27,7 @@ interface Closing { uuid: string; businessDate: string; closedAt: string; notes?
 @Component({
   selector: 'app-operations-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, DatePipe],
+  imports: [CommonModule, ReactiveFormsModule, DatePipe, CashRegisterDialogComponent, CloseSessionDialogComponent, OpenSessionDialogComponent, PurchaseDetailsDialogComponent, StockAdjustmentDialogComponent, PurchaseDraftDialogComponent],
   templateUrl: './operations-page.component.html',
   styleUrl: './operations-page.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush

@@ -1,4 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
+import { SalesCancellationDialogComponent } from '../../components/sales-cancellation-dialog/sales-cancellation-dialog.component';
+import { SalesPaymentDialogComponent } from '../../components/sales-payment-dialog/sales-payment-dialog.component';
+import { SalesDetailsDialogComponent } from '../../components/sales-details-dialog/sales-details-dialog.component';
+import { SalesCreateDialogComponent } from '../../components/sales-create-dialog/sales-create-dialog.component';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { finalize, forkJoin } from 'rxjs';
@@ -26,7 +30,7 @@ import { SalesService } from '../../services/sales.service';
 @Component({
   selector: 'app-sales-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, DatePipe],
+  imports: [CommonModule, ReactiveFormsModule, DatePipe, SalesCancellationDialogComponent, SalesPaymentDialogComponent, SalesDetailsDialogComponent, SalesCreateDialogComponent],
   templateUrl: './sales-page.component.html',
   styleUrl: './sales-page.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush

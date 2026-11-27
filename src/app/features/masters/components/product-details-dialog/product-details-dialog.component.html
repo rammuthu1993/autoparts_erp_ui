@@ -1,0 +1,23 @@
+<div class="modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closeProductView()">
+  <section class="barcode-modal product-detail-modal" role="dialog" aria-modal="true" aria-label="Product details" (click)="$event.stopPropagation()">
+      <header class="modal-header">
+        <div><div class="eyebrow">PRODUCT DETAILS</div><h2>{{ product['name'] }}</h2></div>
+        <button class="icon-action" type="button" [attr.data-tooltip]="'Close'" aria-label="Close" (click)="vm.closeProductView()">×</button>
+      </header>
+      <div class="product-detail-grid">
+        <div><span>Product code</span><strong>{{ product['productCode'] || '—' }}</strong></div>
+        <div><span>Part number</span><strong>{{ product['partNo'] || '—' }}</strong></div>
+        <div><span>Barcode</span><strong>{{ product['barcode'] || '—' }}</strong></div>
+        <div><span>Category</span><strong>{{ product['categoryName'] || '—' }}</strong></div>
+        <div><span>Brand</span><strong>{{ product['brandName'] || '—' }}</strong></div>
+        <div><span>Unit</span><strong>{{ product['unit'] || '—' }}</strong></div>
+        <div><span>Purchase price</span><strong>{{ product['purchasePrice'] ?? '—' }}</strong></div>
+        <div><span>Selling price</span><strong>{{ product['sellingPrice'] ?? '—' }}</strong></div>
+        <div><span>GST rate</span><strong>{{ product['gstRate'] ?? '—' }}</strong></div>
+        <div><span>HSN code</span><strong>{{ product['hsnCode'] || '—' }}</strong></div>
+        <div><span>Minimum stock</span><strong>{{ product['minimumStock'] ?? '—' }}</strong></div>
+        <div><span>Status</span><strong>{{ product['active'] ? 'Active' : 'Inactive' }}</strong></div>
+      </div>
+      <footer class="modal-actions"><button class="secondary-button" type="button" [attr.data-tooltip]="'Close details'" (click)="vm.closeProductView()">Close</button></footer>
+    </section>
+</div>

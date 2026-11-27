@@ -1,0 +1,124 @@
+<div class="modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closeCreate()">
+  <section class="modal create-modal" role="dialog" aria-modal="true" aria-label="Create sales invoice"
+    (click)="$event.stopPropagation()">
+    <header class="modal-header">
+      <div>
+        <div class="eyebrow">NEW TRANSACTION</div>
+        <h2>Create sales invoice</h2>
+      </div>
+      <button class="close-button" type="button" (click)="vm.closeCreate()">×</button>
+    </header>
+    <form [formGroup]="vm.form" (ngSubmit)="vm.createSale(false)">
+      <div class="form-grid">
+        <label class="form-field"><span>Sale date *</span><input type="date" formControlName="saleDate"></label>
+        <label class="form-field"><span>Customer</span>
+          <select formControlName="customerUuid">
+            <option value="">Walk-in customer</option>
+            @for(customer of vm.customers(); track customer.uuid) {
+            <option [value]="customer.uuid">{{ customer.customerName }} · {{ customer.phone || customer.customerCode }}
+            </option>
+            }
+          </select>
+        </label>
+        <label class="form-field"><span>Supply type *</span>
+          <select formControlName="supplyType">
+            <option value="INTRA_STATE">Intra-state (CGST + SGST)</option>
+            <option value="INTER_STATE">Inter-state (IGST)</option>
+          </select>
+        </label>
+        <label class="form-field full-width"><span>Notes</span><textarea rows="2" formControlName="notes"
+            placeholder="Optional notes"></textarea></label>
+      </div>
+      <div class="line-heading">
+        <div><strong>Products</strong><span>Add products and quantities for this invoice.</span></div>
+        <button class="secondary-button" type="button" (click)="vm.addLine()">＋ Add item</button>
+      </div>
+      <div class="product-lines" formArrayName="products">
+        @for(line of vm.productLines.controls; track $index; let i = $index) {
+        <div class="product-line" [formGroupName]="i">
+          <label class="form-field product-select"><span>Product *</span>
+            <select formControlName="productUuid" (change)="vm.onProductSelected(i)">
+              <option value="">Select product</option>
+              @for(product of vm.products(); track product.uuid) {
+              <option [value]="product.uuid">{{ product.productCode }} · {{ product.partNo }} · {{ product.name }} · GST {{ product.gstRate ?? 'N/A' }}%
+              </option>
+              }
+            </select>
+          </label>
+          <label class="form-field"><span>Qty *</span><input type="number" min="0.001" step="0.001"
+              formControlName="quantity"></label>
+          <label class="form-field"><span>Unit price (₹) *</span><input type="number" min="0" step="0.01"
+              formControlName="unitPrice"></label>
+          <label class="form-field"><span>Discount (₹)</span><input type="number" min="0" step="0.01"
+              formControlName="discountAmount"></label>
+          <button class="remove-line" type="button" (click)="vm.removeLine(i)" [disabled]="vm.productLines.length === 1"
+            aria-label="Remove product">×</button>
+        </div>
+        }
+      </div>
+      <section class="live-tax-preview" aria-live="polite">
+        <div class="preview-heading">
+          <div><strong>Invoice total</strong><span>Live preview using GST rates supplied with the product list</span></div>
+          <span class="preview-live"><i></i> LIVE</span>
+        </div>
+        @if(vm.taxPreview().missingTaxProducts.length) {
+          <div class="preview-warning">
+            GST mapping is missing for: {{ vm.taxPreview().missingTaxProducts.join(', ') }}.
+            Refresh product data or configure the product tax mapping before saving.
+          </div>
+        }
+        <div class="preview-grid">
+          <div><span>Subtotal</span><strong>{{ vm.money(vm.taxPreview().subtotal) }}</strong></div>
+          <div><span>Discount</span><strong>{{ vm.money(vm.taxPreview().discount) }}</strong></div>
+          <div><span>Taxable amount</span><strong>{{ vm.money(vm.taxPreview().taxableAmount) }}</strong></div>
+          @if(vm.form.controls.supplyType.value === 'INTRA_STATE') {
+            <div><span>CGST</span><strong>{{ vm.money(vm.taxPreview().cgstAmount) }}</strong></div>
+            <div><span>SGST</span><strong>{{ vm.money(vm.taxPreview().sgstAmount) }}</strong></div>
+          } @else {
+            <div><span>IGST</span><strong>{{ vm.money(vm.taxPreview().igstAmount) }}</strong></div>
+          }
+        </div>
+        <div class="preview-row"><span>Round off</span><strong>{{ vm.money(vm.taxPreview().roundOffAmount) }}</strong></div>
+        <div class="preview-grand-total"><span>Grand total (including GST)</span><strong>{{ vm.money(vm.taxPreview().grandTotal) }}</strong></div>
+      </section>
+      <p class="tax-note">GST percentages are loaded with the product list. The backend recalculates and validates the same line-wise rounded tax amounts when the invoice is saved. Stock is deducted only when you complete the invoice.</p>
+      <section class="payment-entry">
+        <div class="payment-entry-heading">
+          <strong>Payment collection</strong>
+          <span>Choose how the customer is paying now. Select Credit / Pay later if no payment is received.</span>
+        </div>
+        <div class="form-grid">
+          <label class="form-field"><span>Payment method</span>
+            <select formControlName="paymentMethod" (change)="vm.onCreatePaymentMethodChange()">
+              @for(method of vm.paymentMethodOptions; track method.value) {
+                <option [value]="method.value">{{ method.label }}</option>
+              }
+            </select>
+          </label>
+          <label class="form-field"><span>Amount received (₹)</span>
+            @if(vm.form.controls.paymentMethod.value === 'CREDIT') {
+              <input type="text" value="0.00" aria-label="Amount received is zero for credit sale" disabled>
+            } @else {
+              <input type="number" min="0" step="0.01" formControlName="amountReceived">
+            }
+          </label>
+        </div>
+        <div class="payment-entry-summary">
+          <span>Invoice total <strong>{{ vm.money(vm.taxPreview().grandTotal) }}</strong></span>
+          <span>Received now <strong>{{ vm.money(vm.form.controls.amountReceived.value) }}</strong></span>
+          <span>Due after this payment <strong>{{ vm.money(vm.createBalancePreview()) }}</strong></span>
+        </div>
+        <p class="payment-entry-note">Drafts are saved without collecting payment. Payment details are recorded only when you complete the invoice.</p>
+      </section>
+      <footer class="modal-footer">
+        <button class="secondary-button" type="button" (click)="vm.closeCreate()" [disabled]="vm.saving() || vm.taxPreview().missingTaxProducts.length > 0">Cancel</button>
+        <button class="secondary-button" type="button" (click)="vm.createSale(false)" [disabled]="vm.saving() || vm.taxPreview().missingTaxProducts.length > 0">
+          {{ vm.saving() ? 'Saving...' : 'Create draft' }}
+        </button>
+        <button class="primary-button" type="button" (click)="vm.createSale(true)" [disabled]="vm.saving() || !vm.canComplete() || vm.taxPreview().missingTaxProducts.length > 0">
+          {{ vm.saving() ? 'Processing...' : 'Complete invoice' }}
+        </button>
+      </footer>
+    </form>
+  </section>
+</div>

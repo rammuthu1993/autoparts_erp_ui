@@ -1,0 +1,20 @@
+<div class="modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closeBarcode()">
+  <section class="barcode-modal" role="dialog" aria-modal="true" aria-label="Product barcode" (click)="$event.stopPropagation()">
+      <header class="modal-header">
+        <div><div class="eyebrow">PRODUCT IDENTIFICATION</div><h2>Barcode</h2></div>
+        <button class="close-button" type="button" (click)="vm.closeBarcode()" aria-label="Close barcode">×</button>
+      </header>
+      <div class="barcode-preview">
+        <strong>{{ barcode.productName }}</strong>
+        <span class="barcode-product-code">{{ barcode.productCode }}</span>
+        <img [src]="barcode.imageUrl" [alt]="'Barcode for ' + barcode.productName" />
+        <span class="barcode-value">{{ barcode.barcode }}</span>
+        <span class="barcode-type">{{ barcode.barcodeType }} · SCANNER-READABLE</span>
+      </div>
+      <footer class="modal-footer">
+        <button class="secondary-button" type="button" (click)="vm.closeBarcode()" [attr.data-tooltip]="'Close barcode'">✕ Close</button>
+        <button class="secondary-button" type="button" (click)="vm.downloadBarcode()" [attr.data-tooltip]="'Download barcode image'">⇩ Download PNG</button>
+        <button class="primary-button" type="button" (click)="vm.printBarcode()" [attr.data-tooltip]="'Print barcode'">▤ Print barcode</button>
+      </footer>
+    </section>
+</div>

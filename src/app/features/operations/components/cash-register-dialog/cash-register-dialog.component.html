@@ -1,0 +1,9 @@
+<div class="backdrop" (click)="$event.target === $event.currentTarget && vm.showRegisterForm.set(false)">
+  <section class="modal" (click)="$event.stopPropagation()">
+    <header><div><h2>Create cash register</h2><p>Register a physical billing counter.</p></div><button class="close" (click)="vm.showRegisterForm.set(false)">×</button></header>
+    <form [formGroup]="vm.registerForm" (ngSubmit)="vm.createRegister()" class="form-grid">
+      <label>Register code *<input formControlName="registerCode"></label><label>Register name *<input formControlName="name"></label>
+      <label class="wide-field">Description<input formControlName="description"></label>
+      <footer class="wide-field"><button type="button" class="secondary" (click)="vm.showRegisterForm.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="vm.saving()">Create register</button></footer>
+    </form>
+  </section></div>

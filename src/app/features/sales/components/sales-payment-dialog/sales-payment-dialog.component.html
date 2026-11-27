@@ -1,0 +1,31 @@
+<div class="modal-backdrop nested-backdrop" (click)="$event.target === $event.currentTarget && vm.closePayment()">
+  <section class="modal payment-modal" role="dialog" aria-modal="true" aria-label="Record sales payment"
+    (click)="$event.stopPropagation()">
+    <header class="modal-header">
+      <div>
+        <div class="eyebrow">{{ sale.status === 'DRAFT' ? 'ADVANCE COLLECTION' : 'PAYMENT COLLECTION' }}</div>
+        <h2>{{ sale.status === 'DRAFT' ? 'Record advance payment' : 'Record payment' }}</h2>
+        <p>{{ sale.invoiceNumber }} · Outstanding {{ vm.money(sale.balanceAmount) }}</p>
+      </div>
+      <button class="close-button" type="button" (click)="vm.closePayment()">×</button>
+    </header>
+    <form [formGroup]="vm.paymentForm" (ngSubmit)="vm.recordPayment()">
+      <div class="form-grid">
+        <label class="form-field"><span>Payment method *</span><select formControlName="paymentMethod">
+            @for(method of vm.paymentMethods; track method) { <option [value]="method">{{ method }}</option> }
+          </select></label>
+        <label class="form-field"><span>Amount (₹) *</span><input type="number" min="0.01" step="0.01"
+            formControlName="amount"></label>
+        <label class="form-field full-width"><span>Reference number</span><input formControlName="referenceNumber"
+            placeholder="UPI / bank reference"></label>
+        <label class="form-field full-width"><span>Notes</span><textarea rows="2"
+            formControlName="notes"></textarea></label>
+      </div>
+      <footer class="modal-footer"><button class="secondary-button" type="button"
+          (click)="vm.closePayment()">Cancel</button>
+        <button class="primary-button" type="submit" [disabled]="vm.paymentSaving()">{{ vm.paymentSaving() ? 'Saving...' :
+          'Record payment' }}</button>
+      </footer>
+    </form>
+  </section>
+</div>

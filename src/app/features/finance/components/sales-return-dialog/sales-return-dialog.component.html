@@ -1,0 +1,28 @@
+<div class="finance-modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closeSalesReturnModal()">
+          <article class="panel finance-dialog" role="dialog" aria-modal="true" aria-label="Create customer return">
+            <header class="finance-dialog-header"><div><h2>Create customer return</h2><p>{{sale.invoiceNumber}} · {{sale.customerName || 'Walk-in customer'}}</p></div><button type="button" class="finance-dialog-close" (click)="vm.closeSalesReturnModal()" aria-label="Close">×</button></header>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Product</th><th>Sold</th><th>Previously returned</th><th>Remaining</th><th>Return now</th><th>Unit price</th></tr></thead>
+            <tbody>
+              @for(p of sale.products ?? []; track p.uuid) {
+                <tr>
+                  <td>{{p.productName}}<small>{{p.productCode}}</small></td>
+                  <td>{{p.quantity}}</td>
+                  <td>{{vm.previousSalesQty()[p.uuid] || 0}}</td>
+                  <td>{{vm.remainingSalesQty(p)}}</td>
+                  <td><input type="number" min="0" [max]="vm.remainingSalesQty(p)" step="0.001" [disabled]="vm.salesReturnHistoryLoading() || vm.remainingSalesQty(p)<=0" [value]="vm.returnLines()[p.uuid] || 0" (input)="vm.setReturnQty(p.uuid, $any($event.target).value)"></td>
+                  <td>{{p.unitPrice | currency:'INR'}}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="form-grid">
+          <label>Return reason<input [ngModel]="vm.returnReason()" (ngModelChange)="vm.returnReason.set($event)" maxlength="500"></label>
+          <label>Notes<input [ngModel]="vm.returnNotes()" (ngModelChange)="vm.returnNotes.set($event)" maxlength="1000"></label>
+        </div>
+        <button class="primary" [disabled]="vm.saving() || !vm.canCreateSalesReturn()" (click)="vm.createSalesReturn()" data-tooltip="Create sales return">＋ Create return</button>
+        @if(!vm.canCreateSalesReturn()) { <small class="muted">You do not have SALES_RETURNS.CREATE permission.</small> }
+          </article>
+        </div>

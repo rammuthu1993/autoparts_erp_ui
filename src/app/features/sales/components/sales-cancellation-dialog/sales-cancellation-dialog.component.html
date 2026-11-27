@@ -1,0 +1,116 @@
+<div class="modal-backdrop nested-backdrop" (click)="$event.target === $event.currentTarget && vm.closeCancelDialog()">
+  <section class="modal details-modal" role="dialog" aria-modal="true" aria-label="Cancel issued invoice"
+    (click)="$event.stopPropagation()">
+    <header class="modal-header">
+      <div>
+        <div class="eyebrow">FULL INVOICE CANCELLATION</div>
+        @if(vm.cancelPreview(); as preview) {
+        <h2>Cancel {{ preview.invoiceNumber }}</h2>
+        <p>{{ preview.customerName || 'Walk-in customer' }} · {{ preview.saleDate | date:'dd MMM yyyy' }}</p>
+        } @else {
+        <h2>Loading cancellation impact...</h2>
+        }
+      </div>
+      <button class="close-button" type="button" (click)="vm.closeCancelDialog()">×</button>
+    </header>
+
+    @if(vm.cancelPreviewLoading()) {
+    <p class="muted">Calculating stock restoration, refund, receivable, and GST adjustments...</p>
+    } @else if (vm.cancelPreview(); as preview) {
+    <div class="summary-grid">
+      <div><span>Invoice total</span><strong>{{ vm.money(preview.grandTotal) }}</strong></div>
+      <div><span>Previously paid</span><strong>{{ vm.money(preview.previouslyPaidAmount) }}</strong></div>
+      <div><span>Previously returned</span><strong>{{ vm.money(preview.previouslyReturnedAmount) }}</strong></div>
+      <div><span>Outstanding</span><strong>{{ vm.money(preview.outstandingAmount) }}</strong></div>
+      <div><span>Receivable reversed</span><strong>{{ vm.money(preview.receivableAdjustmentAmount) }}</strong></div>
+      <div><span>Refundable amount</span><strong class="balance-due">{{ vm.money(preview.refundableAmount) }}</strong></div>
+    </div>
+
+    @if(preview.warnings.length) {
+    <ul class="cancel-warning-list">
+      @for(w of preview.warnings; track w) {
+      <li>{{ w }}</li>
+      }
+    </ul>
+    }
+
+    @if(!preview.eligibleForCancellation) {
+    <p class="field-error">{{ preview.ineligibilityReason || 'This invoice is not eligible for cancellation.' }}</p>
+    }
+
+    <h3>Stock to be restored</h3>
+    <div class="table-scroll detail-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Sold</th>
+            <th>Returned</th>
+            <th>To restore</th>
+          </tr>
+        </thead>
+        <tbody>@for(item of preview.items; track item.salesProductUuid) {
+          <tr>
+            <td><strong>{{ item.productName }}</strong><small>{{ item.productCode }}</small></td>
+            <td>{{ item.originalQuantity }} {{ item.unit }}</td>
+            <td>{{ item.previouslyReturnedQuantity }} {{ item.unit }}</td>
+            <td><strong>{{ item.remainingQuantityToRestore }} {{ item.unit }}</strong></td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="totals">
+      <div><span>GST adjustment</span><strong>{{ preview.gstAdjustmentType }}</strong></div>
+      <div><span>Taxable reversed</span><strong>{{ vm.money(preview.taxableReversed) }}</strong></div>
+      <div><span>Tax reversed</span><strong>{{ vm.money(preview.totalTaxReversed) }}</strong></div>
+    </div>
+
+    <form class="modal-form" [formGroup]="vm.cancelForm" (ngSubmit)="vm.submitCancelIssued()">
+      <div class="form-grid">
+        <label class="form-field full-width">
+          <span>Cancellation reason *</span>
+          <textarea rows="2" formControlName="reason" placeholder="Reason for cancelling this issued invoice" maxlength="500"></textarea>
+          @if(vm.cancelForm.controls.reason.touched && vm.cancelForm.controls.reason.invalid) {
+          <small class="field-error">A cancellation reason (max 500 characters) is required.</small>
+          }
+        </label>
+
+        @if(preview.refundableAmount > 0) {
+        <label class="form-field">
+          <span>Refund method</span>
+          <select formControlName="refundMethod">
+            @for(m of vm.refundMethods; track m) {
+            <option [value]="m">{{ vm.paymentMethodLabel(m) }}</option>
+            }
+          </select>
+        </label>
+        <label class="form-field">
+          <span>Refund reference</span>
+          <input formControlName="refundReference" placeholder="UPI / card / bank reference" maxlength="100">
+        </label>
+        @if(vm.cancelForm.controls.refundMethod.value !== 'CASH') {
+        <label class="form-field full-width checkbox-field">
+          <input type="checkbox" formControlName="confirmExternalRefund">
+          <span>Mark external refund as already confirmed with provider reference</span>
+        </label>
+        }
+        }
+
+        <label class="form-field full-width">
+          <span>Notes</span>
+          <textarea rows="2" formControlName="notes" placeholder="Optional internal notes" maxlength="1000"></textarea>
+        </label>
+      </div>
+
+      <footer class="modal-footer">
+        <button class="secondary-button" type="button" (click)="vm.closeCancelDialog()" [disabled]="vm.cancelling()">Back</button>
+        <button class="danger-button" type="submit" [disabled]="vm.cancelling() || !preview.eligibleForCancellation">
+          {{ vm.cancelling() ? 'Cancelling...' : 'Confirm cancel invoice' }}
+        </button>
+      </footer>
+    </form>
+    }
+  </section>
+</div>

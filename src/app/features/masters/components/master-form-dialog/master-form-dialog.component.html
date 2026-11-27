@@ -1,0 +1,50 @@
+<div class="modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closeForm()">
+  <section class="form-modal" role="dialog" aria-modal="true" [attr.aria-label]="(vm.editingUuid() ? 'Edit ' : 'Add ') + vm.config().singular"
+      (click)="$event.stopPropagation()">
+      <header class="modal-header">
+        <div>
+          <div class="eyebrow">{{ vm.editingUuid() ? 'UPDATE MASTER' : 'NEW MASTER' }}</div>
+          <h2>{{ vm.editingUuid() ? 'Edit ' : 'Add ' }}{{ vm.config().singular }}</h2>
+        </div>
+        <button class="close-button" type="button" (click)="vm.closeForm()" aria-label="Close">×</button>
+      </header>
+      <form [formGroup]="vm.form" (ngSubmit)="vm.save()">
+        <div class="form-grid">
+          @for(field of vm.fields(); track field.key) {
+            @if((field.key !== 'taxRateUuid' && field.key !== 'hsnCode') || !vm.editingUuid()) {
+            <label class="form-field" [class.full-width]="field.type === 'textarea'">
+              <span>{{ field.label }} @if(field.required) { <em>*</em> }</span>
+              @if(field.type === 'textarea') {
+                <textarea [formControlName]="field.key" rows="3" [placeholder]="field.placeholder ?? ''"></textarea>
+              } @else if (field.type === 'select') {
+                <select [formControlName]="field.key">
+                  <option [ngValue]="null">Select {{ field.label }}</option>
+                  @for(option of field.options ?? []; track option.id) {
+                    <option [ngValue]="option.id">{{ option.name }}</option>
+                  }
+                </select>
+              } @else {
+                <input [type]="field.type ?? 'text'" [formControlName]="field.key"
+                  [min]="field.min ?? null" [step]="field.step ?? null"
+                  [placeholder]="field.placeholder ?? ''" />
+              }
+              @if(vm.form.controls[field.key].touched && vm.form.controls[field.key].invalid) {
+                <small class="field-error">
+                  @if(vm.form.controls[field.key].hasError('required')) { {{ field.label }} is required. }
+                  @else if (vm.form.controls[field.key].hasError('email')) { Enter a valid email address. }
+                  @else if (vm.form.controls[field.key].hasError('min')) { Value must be {{ field.min }} or greater. }
+                </small>
+              }
+            </label>
+            }
+          }
+        </div>
+        <footer class="modal-footer">
+          <button class="secondary-button" type="button" (click)="vm.closeForm()" [disabled]="vm.submitting()" [attr.data-tooltip]="'Close without saving'">✕ Cancel</button>
+          <button class="primary-button" type="submit" [disabled]="vm.submitting()">
+            {{ vm.submitting() ? 'Saving...' : (vm.editingUuid() ? 'Save changes' : 'Create ' + vm.config().singular) }}
+          </button>
+        </footer>
+      </form>
+    </section>
+</div>

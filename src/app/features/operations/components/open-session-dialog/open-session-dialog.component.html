@@ -1,0 +1,8 @@
+<div class="backdrop" (click)="$event.target === $event.currentTarget && vm.showOpenSession.set(false)">
+  <section class="modal" (click)="$event.stopPropagation()">
+    <header><div><h2>Open cash session</h2><p>{{ register.registerCode }} · {{ register.name }}</p></div><button class="close" (click)="vm.showOpenSession.set(false)">×</button></header>
+    <form [formGroup]="vm.openingForm" (ngSubmit)="vm.confirmOpenSession()" class="form-grid">
+      <label class="wide-field">Opening cash balance (₹) *<input type="number" min="0" step="0.01" formControlName="openingBalance"></label>
+      <footer class="wide-field"><button type="button" class="secondary" (click)="vm.showOpenSession.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="vm.saving()">Open session</button></footer>
+    </form>
+  </section></div>

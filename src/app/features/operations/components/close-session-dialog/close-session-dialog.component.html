@@ -1,0 +1,8 @@
+<div class="backdrop" (click)="$event.target === $event.currentTarget && vm.showCloseSession.set(false)">
+  <section class="modal" (click)="$event.stopPropagation()">
+    <header><div><h2>Close cash session</h2><p>{{ register.name }} · Count the physical cash before closing.</p></div><button class="close" (click)="vm.showCloseSession.set(false)">×</button></header>
+    <form [formGroup]="vm.closingForm" (ngSubmit)="vm.confirmCloseSession()" class="form-grid">
+      <label class="wide-field">Actual closing cash (₹) *<input type="number" min="0" step="0.01" formControlName="actualClosingBalance"></label>
+      <footer class="wide-field"><button type="button" class="secondary" (click)="vm.showCloseSession.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="vm.saving()">Confirm close</button></footer>
+    </form>
+  </section></div>

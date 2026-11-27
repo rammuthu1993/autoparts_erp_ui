@@ -1,0 +1,188 @@
+<div class="modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closeDetails()">
+  <section class="modal details-modal" role="dialog" aria-modal="true" aria-label="Sales invoice details"
+    (click)="$event.stopPropagation()">
+    <header class="modal-header">
+      <div>
+        <div class="eyebrow">SALES INVOICE</div>
+        <h2>{{ sale.invoiceNumber }}</h2>
+        <p>{{ sale.customerName || 'Walk-in customer' }} · {{ sale.saleDate | date:'dd MMM yyyy' }}</p>
+      </div>
+      <button class="close-button" type="button" (click)="vm.closeDetails()">×</button>
+    </header>
+    <div class="summary-grid">
+      <div><span>Grand total</span><strong>{{ vm.money(sale.grandTotal) }}</strong></div>
+      <div><span>Paid</span><strong>{{ sale.status === 'CANCELLED' ? '—' : vm.money(sale.paidAmount) }}</strong></div>
+      <div><span>Balance</span><strong [class.balance-due]="sale.status === 'COMPLETED' && sale.balanceAmount > 0">{{ sale.status === 'CANCELLED' ? '—' : vm.money(sale.balanceAmount) }}</strong></div>
+    </div>
+    <h3>Invoice items</h3>
+    <div class="table-scroll detail-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Sold qty</th>
+            <th>Returned</th>
+            <th>Net qty</th>
+            <th>Unit price</th>
+            <th>Tax</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>@for(item of sale.products; track item.uuid) {
+          <tr>
+            <td><strong>{{ item.productName }}</strong><small>{{ item.productCode }}{{ item.hsnCode ? ' · HSN ' + item.hsnCode : '' }}</small>
+            </td>
+            <td>{{ item.quantity }} {{ item.unit }}</td>
+            <td>{{ vm.returnedQuantity(item.uuid) }} {{ item.unit }}</td>
+            <td><strong>{{ vm.netQuantity(item) }} {{ item.unit }}</strong></td>
+            <td>{{ vm.money(item.unitPrice) }}</td>
+            <td>{{ vm.money(item.totalTaxAmount) }}</td>
+            <td>{{ vm.money(item.lineTotal) }}</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="totals">
+      <div><span>Subtotal</span><strong>{{ vm.money(sale.subtotal) }}</strong></div>
+      <div><span>Discount</span><strong>{{ vm.money(sale.discountAmount) }}</strong></div>
+      <div><span>CGST</span><strong>{{ vm.money(sale.cgstAmount) }}</strong></div>
+      <div><span>SGST</span><strong>{{ vm.money(sale.sgstAmount) }}</strong></div>
+      <div><span>IGST</span><strong>{{ vm.money(sale.igstAmount) }}</strong></div>
+      <div><span>Round off</span><strong>{{ vm.money(sale.roundOffAmount) }}</strong></div>
+      <div class="grand-total"><span>Grand total</span><strong>{{ vm.money(sale.grandTotal) }}</strong></div>
+    </div>
+    @if(vm.saleReturns().length) {
+      <section class="return-history-box">
+        <h3>Sales returns and refunds</h3>
+        @for(ret of vm.saleReturns(); track ret.uuid) {
+          <div class="return-history-card">
+            <div class="return-history-heading">
+              <strong>{{ ret.returnNumber || 'Sales return' }}</strong>
+              <span>{{ ret.returnDate | date:'dd MMM yyyy, hh:mm a' }}</span>
+            </div>
+            @if(ret.reason) { <p>{{ ret.reason }}</p> }
+            <div class="table-scroll detail-table">
+              <table>
+                <thead><tr><th>Returned product</th><th>Qty</th><th>Unit price</th><th>Return value</th></tr></thead>
+                <tbody>
+                  @for(line of ret.products ?? []; track line.uuid) {
+                    <tr>
+                      <td><strong>{{ line.productName }}</strong><small>{{ line.productCode }}</small></td>
+                      <td>{{ line.quantity }} {{ line.unit }}</td>
+                      <td>{{ vm.money(line.unitPrice) }}</td>
+                      <td>{{ vm.money(line.lineTotal) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div class="return-financial-summary">
+              <span>Credit note value <strong>{{ vm.money(vm.negativeAmount(ret.totalReturnAmount)) }}</strong></span>
+              <span>Refunded <strong>{{ vm.money(ret.refundedAmount) }}</strong></span>
+              <span>Refund due <strong>{{ vm.money(ret.refundableAmount) }}</strong></span>
+            </div>
+            @if(ret.refunds?.length) {
+              <div class="payment-list">
+                @for(refund of ret.refunds; track refund.uuid) {
+                  <div>
+                    <span>{{ vm.paymentMethodLabel(refund.paymentMethod) }} · {{ refund.refundDate | date:'dd MMM yyyy, hh:mm a' }}@if(refund.referenceNumber) { · Ref: {{ refund.referenceNumber }} }</span>
+                    <strong>{{ vm.money(refund.amount) }}</strong>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+        <div class="return-financial-summary return-net-total">
+          <span>Total return credit <strong>{{ vm.money(vm.negativeAmount(vm.totalReturnCredit())) }}</strong></span>
+          <span>Net invoice value after returns <strong>{{ vm.money(vm.netInvoiceValue(sale.grandTotal)) }}</strong></span>
+        </div>
+      </section>
+    } @else if (sale.status === 'COMPLETED') {
+      <p class="muted">No sales returns recorded for this invoice.</p>
+    }
+
+    <h3>Payments</h3>
+    @if(sale.payments.length) {
+    <div class="payment-list">@for(payment of sale.payments; track payment.uuid) {
+      <div><span>{{ vm.paymentMethodLabel(payment.paymentMethod) }} · {{ payment.paymentDate | date:'dd MMM, hh:mm a' }}</span><strong>{{
+          vm.money(payment.amount) }}</strong></div>
+      }
+    </div>
+    } @else { <p class="muted">No payments recorded.</p> }
+
+    @if(sale.status === 'CANCELLED') {
+    <div class="cancellation-history-box">
+      <h3>Cancellation details</h3>
+      @if(vm.cancellationDetails(); as canc) {
+      <div class="cancellation-meta">
+        <div><span>Reason</span><strong>{{ canc.cancellationReason }}</strong></div>
+        <div><span>Cancelled by</span><strong>{{ canc.cancelledByUsername }} · {{ canc.cancelledAt | date:'dd MMM yyyy, hh:mm a' }}</strong></div>
+        <div><span>Receivable reversed</span><strong>{{ vm.money(canc.receivableAdjustmentAmount) }}</strong></div>
+        <div><span>Refund amount</span><strong>{{ vm.money(canc.refundAmount) }} ({{ canc.refundStatus }})</strong></div>
+        <div><span>GST adjustment</span><strong>{{ canc.gstAdjustmentType }}@if(canc.gstAdjustmentReference) { · {{ canc.gstAdjustmentReference }} }</strong></div>
+      </div>
+      @if(canc.items.length) {
+      <div class="table-scroll detail-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Sold</th>
+              <th>Prev. returned</th>
+              <th>Restored</th>
+            </tr>
+          </thead>
+          <tbody>@for(item of canc.items; track item.uuid) {
+            <tr>
+              <td><strong>{{ item.productName }}</strong><small>{{ item.productCode }}</small></td>
+              <td>{{ item.originalQuantity }} {{ item.unit }}</td>
+              <td>{{ item.previouslyReturnedQuantity }} {{ item.unit }}</td>
+              <td><strong>{{ item.restoredQuantity }} {{ item.unit }}</strong></td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      }
+      @if(canc.refunds.length) {
+      <div class="payment-list">@for(ref of canc.refunds; track ref.uuid) {
+        <div>
+          <span>{{ vm.paymentMethodLabel(ref.paymentMethod) }} · {{ ref.status }}@if(ref.referenceNumber) { · Ref: {{ ref.referenceNumber }} }</span>
+          <span class="refund-action-cell">
+            <strong>{{ vm.money(ref.amount) }}</strong>
+            @if(ref.status === 'PENDING' && vm.canCancelIssued()) {
+            <button class="secondary-button compact-button" type="button"
+              [disabled]="vm.confirmingRefundUuid() === ref.uuid"
+              (click)="vm.confirmExternalRefund(sale.uuid, ref)">Confirm</button>
+            }
+          </span>
+        </div>
+        }
+      </div>
+      }
+      } @else if (sale.cancellationReason) {
+      <p class="muted">Reason: {{ sale.cancellationReason }}</p>
+      }
+    </div>
+    }
+
+    <footer class="modal-footer action-footer">
+      @if(sale.status === 'DRAFT' && vm.canComplete()) { <button class="primary-button" type="button"
+        (click)="vm.completeSale(sale)">Complete invoice</button> }
+      @if((sale.status === 'DRAFT' || sale.status === 'COMPLETED') && sale.balanceAmount > 0 && vm.canPay()) {
+        <button class="primary-button" type="button" (click)="vm.openPayment(sale)">Record payment</button>
+      }  
+      @if(sale.status === 'DRAFT' && vm.canCancel() && sale.paidAmount <= 0) {
+        <button class="danger-button" type="button" (click)="vm.cancelSale(sale)">Cancel draft</button>
+      }
+      @if(sale.status === 'DRAFT' && sale.paidAmount > 0) {
+        <span class="muted">This draft has an advance payment. Complete the invoice before processing a refund.</span>
+      }
+      @if(sale.status === 'COMPLETED' && vm.canCancelIssued()) { <button class="danger-button" type="button"
+        (click)="vm.openCancelDialog(sale)">Cancel invoice</button> }
+      <button class="secondary-button" type="button" (click)="vm.closeDetails()">Close</button>
+    </footer>
+  </section>
+</div>

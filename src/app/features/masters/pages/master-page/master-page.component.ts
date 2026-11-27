@@ -1,4 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
+import { ProductBarcodeDialogComponent } from '../../components/product-barcode-dialog/product-barcode-dialog.component';
+import { ProductDetailsDialogComponent } from '../../components/product-details-dialog/product-details-dialog.component';
+import { MasterFormDialogComponent } from '../../components/master-form-dialog/master-form-dialog.component';
 import { CommonModule } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -43,7 +46,7 @@ interface MasterConfig {
 @Component({
   selector: 'app-master-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, ProductBarcodeDialogComponent, ProductDetailsDialogComponent, MasterFormDialogComponent],
   templateUrl: './master-page.component.html',
   styleUrl: './master-page.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush

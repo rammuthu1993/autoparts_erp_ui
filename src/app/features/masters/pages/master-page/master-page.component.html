@@ -87,82 +87,11 @@
 </section>
 
 @if (showForm()) {
-  <div class="modal-backdrop" (click)="closeForm()">
-    <section class="form-modal" role="dialog" aria-modal="true" [attr.aria-label]="(editingUuid() ? 'Edit ' : 'Add ') + config().singular"
-      (click)="$event.stopPropagation()">
-      <header class="modal-header">
-        <div>
-          <div class="eyebrow">{{ editingUuid() ? 'UPDATE MASTER' : 'NEW MASTER' }}</div>
-          <h2>{{ editingUuid() ? 'Edit ' : 'Add ' }}{{ config().singular }}</h2>
-        </div>
-        <button class="close-button" type="button" (click)="closeForm()" aria-label="Close">×</button>
-      </header>
-      <form [formGroup]="form" (ngSubmit)="save()">
-        <div class="form-grid">
-          @for (field of fields(); track field.key) {
-            @if ((field.key !== 'taxRateUuid' && field.key !== 'hsnCode') || !editingUuid()) {
-            <label class="form-field" [class.full-width]="field.type === 'textarea'">
-              <span>{{ field.label }} @if (field.required) { <em>*</em> }</span>
-              @if (field.type === 'textarea') {
-                <textarea [formControlName]="field.key" rows="3" [placeholder]="field.placeholder ?? ''"></textarea>
-              } @else if (field.type === 'select') {
-                <select [formControlName]="field.key">
-                  <option [ngValue]="null">Select {{ field.label }}</option>
-                  @for (option of field.options ?? []; track option.id) {
-                    <option [ngValue]="option.id">{{ option.name }}</option>
-                  }
-                </select>
-              } @else {
-                <input [type]="field.type ?? 'text'" [formControlName]="field.key"
-                  [min]="field.min ?? null" [step]="field.step ?? null"
-                  [placeholder]="field.placeholder ?? ''" />
-              }
-              @if (form.controls[field.key].touched && form.controls[field.key].invalid) {
-                <small class="field-error">
-                  @if (form.controls[field.key].hasError('required')) { {{ field.label }} is required. }
-                  @else if (form.controls[field.key].hasError('email')) { Enter a valid email address. }
-                  @else if (form.controls[field.key].hasError('min')) { Value must be {{ field.min }} or greater. }
-                </small>
-              }
-            </label>
-            }
-          }
-        </div>
-        <footer class="modal-footer">
-          <button class="secondary-button" type="button" (click)="closeForm()" [disabled]="submitting()" [attr.data-tooltip]="'Close without saving'">✕ Cancel</button>
-          <button class="primary-button" type="submit" [disabled]="submitting()">
-            {{ submitting() ? 'Saving...' : (editingUuid() ? 'Save changes' : 'Create ' + config().singular) }}
-          </button>
-        </footer>
-      </form>
-    </section>
-  </div>
+  <app-master-form-dialog [vm]="this" />
 }
 
 @if (selectedProduct(); as product) {
-  <div class="modal-backdrop" (click)="closeProductView()">
-    <section class="barcode-modal product-detail-modal" role="dialog" aria-modal="true" aria-label="Product details" (click)="$event.stopPropagation()">
-      <header class="modal-header">
-        <div><div class="eyebrow">PRODUCT DETAILS</div><h2>{{ product['name'] }}</h2></div>
-        <button class="icon-action" type="button" [attr.data-tooltip]="'Close'" aria-label="Close" (click)="closeProductView()">×</button>
-      </header>
-      <div class="product-detail-grid">
-        <div><span>Product code</span><strong>{{ product['productCode'] || '—' }}</strong></div>
-        <div><span>Part number</span><strong>{{ product['partNo'] || '—' }}</strong></div>
-        <div><span>Barcode</span><strong>{{ product['barcode'] || '—' }}</strong></div>
-        <div><span>Category</span><strong>{{ product['categoryName'] || '—' }}</strong></div>
-        <div><span>Brand</span><strong>{{ product['brandName'] || '—' }}</strong></div>
-        <div><span>Unit</span><strong>{{ product['unit'] || '—' }}</strong></div>
-        <div><span>Purchase price</span><strong>{{ product['purchasePrice'] ?? '—' }}</strong></div>
-        <div><span>Selling price</span><strong>{{ product['sellingPrice'] ?? '—' }}</strong></div>
-        <div><span>GST rate</span><strong>{{ product['gstRate'] ?? '—' }}</strong></div>
-        <div><span>HSN code</span><strong>{{ product['hsnCode'] || '—' }}</strong></div>
-        <div><span>Minimum stock</span><strong>{{ product['minimumStock'] ?? '—' }}</strong></div>
-        <div><span>Status</span><strong>{{ product['active'] ? 'Active' : 'Inactive' }}</strong></div>
-      </div>
-      <footer class="modal-actions"><button class="secondary-button" type="button" [attr.data-tooltip]="'Close details'" (click)="closeProductView()">Close</button></footer>
-    </section>
-  </div>
+  <app-product-details-dialog [vm]="this" [product]="product" />
 }
 
 @if (barcodeLoading()) {
@@ -170,24 +99,5 @@
 }
 
 @if (selectedBarcode(); as barcode) {
-  <div class="modal-backdrop" (click)="closeBarcode()">
-    <section class="barcode-modal" role="dialog" aria-modal="true" aria-label="Product barcode" (click)="$event.stopPropagation()">
-      <header class="modal-header">
-        <div><div class="eyebrow">PRODUCT IDENTIFICATION</div><h2>Barcode</h2></div>
-        <button class="close-button" type="button" (click)="closeBarcode()" aria-label="Close barcode">×</button>
-      </header>
-      <div class="barcode-preview">
-        <strong>{{ barcode.productName }}</strong>
-        <span class="barcode-product-code">{{ barcode.productCode }}</span>
-        <img [src]="barcode.imageUrl" [alt]="'Barcode for ' + barcode.productName" />
-        <span class="barcode-value">{{ barcode.barcode }}</span>
-        <span class="barcode-type">{{ barcode.barcodeType }} · SCANNER-READABLE</span>
-      </div>
-      <footer class="modal-footer">
-        <button class="secondary-button" type="button" (click)="closeBarcode()" [attr.data-tooltip]="'Close barcode'">✕ Close</button>
-        <button class="secondary-button" type="button" (click)="downloadBarcode()" [attr.data-tooltip]="'Download barcode image'">⇩ Download PNG</button>
-        <button class="primary-button" type="button" (click)="printBarcode()" [attr.data-tooltip]="'Print barcode'">▤ Print barcode</button>
-      </footer>
-    </section>
-  </div>
+  <app-product-barcode-dialog [vm]="this" [barcode]="barcode" />
 }
