@@ -1,0 +1,45 @@
+<div class="finance-modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closePurchaseReturnDetail()">
+  <article class="panel finance-dialog" role="dialog" aria-modal="true" aria-label="Purchase return details">
+    <header class="finance-dialog-header">
+      <div>
+        <h2>Purchase return {{ r.returnNumber }}</h2>
+        <p>{{ r.purchaseNumber }} · {{ r.returnDate | date:'mediumDate' }}</p>
+      </div>
+      <button type="button" class="finance-dialog-close" (click)="vm.closePurchaseReturnDetail()" aria-label="Close">×</button>
+    </header>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Product</th><th>Code</th><th>Returned qty</th><th>Unit cost</th><th>Line total</th></tr></thead>
+        <tbody>
+          @for(line of r.products ?? []; track line.uuid) {
+            <tr><td>{{ line.productName }}</td><td>{{ line.productCode }}</td><td>{{ line.quantity }}</td><td>{{ line.purchasePrice | currency:'INR' }}</td><td>{{ line.lineTotal | currency:'INR' }}</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p><strong>Return total:</strong> {{ r.totalReturnAmount | currency:'INR' }}</p>
+    @if (r.supplierCredit; as sc) {
+      <p><strong>Supplier credit ({{ sc.status }}):</strong> Total {{ sc.creditAmount | currency:'INR' }} · Refunded {{ sc.refundedAmount | currency:'INR' }} · Applied {{ sc.appliedAmount | currency:'INR' }} · Remaining <strong>{{ sc.remainingAmount | currency:'INR' }}</strong></p>
+      @if (sc.remainingAmount > 0 && vm.canCreatePurchaseReturn()) {
+        @if (vm.refundForm().paymentMethod === 'CASH' && !vm.myActiveCashSession()) {
+          <p class="field-error">No active cash register session is open for your user. Open a cash session before recording a CASH supplier refund.</p>
+        }
+        <div class="form-grid">
+          <label>Refund method<select [ngModel]="vm.refundForm().paymentMethod" (ngModelChange)="vm.setRefund('paymentMethod', $event)">@for(m of vm.paymentMethods; track m) { <option [value]="m">{{m}}</option> }</select></label>
+          <label>Refund amount *
+            <input type="number" min="0.01" [max]="sc.remainingAmount" step="0.01" [ngModel]="vm.refundForm().amount" (ngModelChange)="vm.setRefund('amount', +$event)">
+            @if (vm.refundForm().amount > sc.remainingAmount) {
+              <small class="field-error">Exceeds remaining credit ({{ sc.remainingAmount | currency:'INR' }}).</small>
+            }
+          </label>
+          <label>Reference<input [ngModel]="vm.refundForm().referenceNumber" (ngModelChange)="vm.setRefund('referenceNumber', $event)" maxlength="100"></label>
+          <label>Notes<input [ngModel]="vm.refundForm().notes" (ngModelChange)="vm.setRefund('notes', $event)" maxlength="500"></label>
+        </div>
+        <div class="finance-dialog-actions">
+          <button class="primary" [disabled]="vm.saving() || vm.refundForm().amount <= 0 || vm.refundForm().amount > sc.remainingAmount || (vm.refundForm().paymentMethod === 'CASH' && !vm.myActiveCashSession())" (click)="vm.recordSupplierRefund(sc)">Record supplier refund</button>
+          <button class="secondary" [disabled]="vm.saving()" (click)="vm.openCreditApplicationModal(sc)">Apply credit to purchase</button>
+        </div>
+      }
+    }
+  </article>
+</div>

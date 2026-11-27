@@ -1,0 +1,46 @@
+<div class="finance-modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closeCreditApplicationModal()">
+  <article class="panel finance-dialog" role="dialog" aria-modal="true" aria-label="Apply supplier credit">
+    <header class="finance-dialog-header">
+      <div>
+        <h2>Apply supplier credit</h2>
+        <p>Available credit: <strong>{{ credit.remainingAmount | currency:'INR' }}</strong></p>
+      </div>
+      <button type="button" class="finance-dialog-close" (click)="vm.closeCreditApplicationModal()" aria-label="Close">×</button>
+    </header>
+
+    <div class="form-grid">
+      <label>Search eligible received purchases
+        <input [ngModel]="vm.creditPurchaseSearch()" (ngModelChange)="vm.creditPurchaseSearch.set($event); vm.loadEligiblePurchasesForCredit(credit)" placeholder="Search purchase number or invoice">
+      </label>
+      <label>Target purchase *
+        <select [ngModel]="vm.creditTargetPurchaseUuid()" (ngModelChange)="vm.creditTargetPurchaseUuid.set($event)">
+          <option value="">Select target purchase</option>
+          @for (p of vm.eligibleCreditPurchases(); track p.uuid) {
+            <option [value]="p.uuid">{{ p.purchaseNumber }} · Inv {{ p.supplierInvoiceNo }} · Total {{ p.grandTotal | currency:'INR' }}</option>
+          }
+        </select>
+        @if (!vm.eligibleCreditPurchases().length) {
+          <small class="muted">No eligible received purchases with outstanding balance found for this supplier.</small>
+        }
+      </label>
+      <label>Amount to apply (₹) *
+        <input type="number" min="0.01" [max]="credit.remainingAmount" step="0.01" [ngModel]="vm.creditApplyAmount()" (ngModelChange)="vm.creditApplyAmount.set(+$event)">
+        @if (vm.creditApplyAmount() <= 0) {
+          <small class="field-error">Enter a positive amount to apply.</small>
+        }
+        @if (vm.creditApplyAmount() > credit.remainingAmount) {
+          <small class="field-error">Amount exceeds remaining credit ({{ credit.remainingAmount | currency:'INR' }}).</small>
+        }
+      </label>
+    </div>
+
+    <p><strong>Remaining credit after application:</strong> {{ vm.remainingCreditAfterApplication(credit.remainingAmount) | currency:'INR' }}</p>
+
+    <footer class="finance-dialog-actions">
+      <button type="button" class="secondary" (click)="vm.closeCreditApplicationModal()">Cancel</button>
+      <button type="button" class="primary" [disabled]="vm.saving() || !vm.creditTargetPurchaseUuid() || vm.creditApplyAmount() <= 0 || vm.creditApplyAmount() > credit.remainingAmount" (click)="vm.submitApplySupplierCredit(credit)">
+        {{ vm.saving() ? 'Applying…' : 'Confirm apply credit' }}
+      </button>
+    </footer>
+  </article>
+</div>

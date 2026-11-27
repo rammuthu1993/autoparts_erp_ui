@@ -4,7 +4,9 @@ import { CloseSessionDialogComponent } from '../../components/close-session-dial
 import { OpenSessionDialogComponent } from '../../components/open-session-dialog/open-session-dialog.component';
 import { PurchaseDetailsDialogComponent } from '../../components/purchase-details-dialog/purchase-details-dialog.component';
 import { StockAdjustmentDialogComponent } from '../../components/stock-adjustment-dialog/stock-adjustment-dialog.component';
+import { StockReconciliationDialogComponent } from '../../components/stock-reconciliation-dialog/stock-reconciliation-dialog.component';
 import { PurchaseDraftDialogComponent } from '../../components/purchase-draft-dialog/purchase-draft-dialog.component';
+import * as XLSX from 'xlsx';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -16,18 +18,18 @@ import { ToastService } from '../../../../core/notifications/toast.service';
 
 type OperationType = 'purchases' | 'inventory' | 'cash-register' | 'daily-closing';
 interface Page<T> { content: T[]; page: number; size: number; totalElements: number; totalPages: number; }
-interface Product { id: number; uuid: string; productCode: string; name: string; partNo: string; purchasePrice: number; sellingPrice: number; minimumStock: number; unit: string; active: boolean; }
+interface Product { id: number; uuid: string; productCode: string; name: string; partNo: string; purchasePrice: number; sellingPrice: number; minimumStock: number; qty?: number; unit: string; active: boolean; }
 interface Supplier { id: number; uuid: string; supplierName: string; active: boolean; }
 interface Purchase { id: number; uuid: string; purchaseNumber: string; supplierId: number; supplierName: string; supplierInvoiceNo: string; purchaseDate: string; status: string; grandTotal: number; notes?: string; products: any[]; }
 interface Stock { productUuid: string; productCode: string; partNo: string; productName: string; quantity: number; minimumStock: number; unit: string; lowStock: boolean; }
 interface Register { uuid: string; registerCode: string; name: string; description?: string; active: boolean; }
-interface Session { uuid: string; registerUuid: string; registerName: string; openingBalance: number; expectedClosingBalance: number; actualClosingBalance?: number; status: string; openedAt: string; closedAt?: string; }
+interface Session { uuid: string; registerUuid: string; registerName: string; openingBalance: number; totalCashIn?: number; totalCashOut?: number; expectedClosingBalance: number; actualClosingBalance?: number; difference?: number; status: string; openedAt: string; closedAt?: string; }
 interface Closing { uuid: string; businessDate: string; closedAt: string; notes?: string; summary: any; }
 
 @Component({
   selector: 'app-operations-page',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, DatePipe, CashRegisterDialogComponent, CloseSessionDialogComponent, OpenSessionDialogComponent, PurchaseDetailsDialogComponent, StockAdjustmentDialogComponent, PurchaseDraftDialogComponent],
+  imports: [CommonModule, ReactiveFormsModule, DatePipe, CashRegisterDialogComponent, CloseSessionDialogComponent, OpenSessionDialogComponent, PurchaseDetailsDialogComponent, StockAdjustmentDialogComponent, StockReconciliationDialogComponent, PurchaseDraftDialogComponent],
   templateUrl: './operations-page.component.html',
   styleUrl: './operations-page.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -60,8 +62,46 @@ export class OperationsPageComponent implements OnInit {
   readonly showRegisterForm = signal(false);
   readonly showOpenSession = signal(false);
   readonly showCloseSession = signal(false);
+  readonly showReconcile = signal(false);
   readonly selectedRegister = signal<Register | null>(null);
   readonly today = this.localDate();
+
+  // Purchase filters & state
+  readonly purchaseStatusFilter = signal('');
+  readonly purchasePaymentFilter = signal('');
+  readonly purchaseSupplierFilter = signal('');
+  readonly purchaseOnlyOutstanding = signal(false);
+  readonly purchaseFromDate = signal('');
+  readonly purchaseToDate = signal('');
+  readonly editingPurchaseUuid = signal<string | null>(null);
+  readonly purchasePaymentSummary = signal<any | null>(null);
+
+  // Inventory summary, movements & reconciliation
+  readonly inventorySummary = signal<{ totalActiveProducts: number; inStockProducts: number; lowStockProducts: number; outOfStockProducts: number } | null>(null);
+  readonly stockStatusFilter = signal('ALL');
+  readonly inventoryTab = signal<'stock' | 'movements'>('stock');
+  readonly movements = signal<any[]>([]);
+  readonly movementTypeFilter = signal('');
+  readonly movementFromDate = signal('');
+  readonly movementToDate = signal('');
+  readonly movementPage = signal(0);
+  readonly movementTotalPages = signal(0);
+
+  // Cash register active session, history & movements
+  readonly cashTab = signal<'registers' | 'sessions' | 'movements'>('registers');
+  readonly myActiveCashSession = signal<Session | null>(null);
+  readonly sessionHistory = signal<Session[]>([]);
+  readonly sessionHistoryPage = signal(0);
+  readonly sessionHistoryTotalPages = signal(0);
+  readonly activeMovementSessionUuid = signal<string>('');
+  readonly sessionMovements = signal<any[]>([]);
+
+  // Daily closing preview & filters
+  readonly dailyPreview = signal<any | null>(null);
+  readonly previewLoading = signal(false);
+  readonly closingFromDate = signal('');
+  readonly closingToDate = signal('');
+  readonly selectedClosing = signal<Closing | null>(null);
 
   readonly purchaseForm = this.fb.group({
     supplierId: [null as number | null, Validators.required],
@@ -86,15 +126,41 @@ export class OperationsPageComponent implements OnInit {
     referenceNumber: [''],
     notes: ['']
   });
-  readonly openingForm = this.fb.group({ openingBalance: [0, [Validators.required, Validators.min(0)]] });
-  readonly closingForm = this.fb.group({ actualClosingBalance: [0, [Validators.required, Validators.min(0)]] });
-  readonly dailyForm = this.fb.group({ businessDate: [this.today, Validators.required], notes: [''] });
+  readonly openingForm = this.fb.group({
+    openingBalance: [0, [Validators.required, Validators.min(0)]],
+    openingNotes: ['', Validators.maxLength(500)]
+  });
+  readonly closingForm = this.fb.group({
+    actualClosingBalance: [0, [Validators.required, Validators.min(0)]],
+    useDenominations: [false],
+    denomination500: [0, [Validators.min(0)]],
+    denomination200: [0, [Validators.min(0)]],
+    denomination100: [0, [Validators.min(0)]],
+    denomination50: [0, [Validators.min(0)]],
+    denomination20: [0, [Validators.min(0)]],
+    denomination10: [0, [Validators.min(0)]],
+    coinsAmount: [0, [Validators.min(0)]],
+    differenceReason: ['', Validators.maxLength(500)]
+  });
+  readonly reconcileForm = this.fb.group({
+    physicalQuantity: [0, [Validators.required, Validators.min(0)]],
+    reason: ['', [Validators.required, Validators.maxLength(250)]],
+    notes: ['', Validators.maxLength(500)]
+  });
+  readonly manualMovementForm = this.fb.group({
+    movementType: ['IN', Validators.required],
+    amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
+    description: ['', [Validators.required, Validators.maxLength(300)]]
+  });
+  readonly dailyForm = this.fb.group({ businessDate: [this.today, Validators.required], notes: ['', Validators.maxLength(1000)] });
 
   get purchaseLines(): FormArray { return this.purchaseForm.controls.products as FormArray; }
   get canCreatePurchase(): boolean { return this.auth.hasPermission('PURCHASES.CREATE'); }
+  get canCancelPurchase(): boolean { return this.auth.hasPermission('PURCHASES.CANCEL'); }
   get canReceivePurchase(): boolean { return this.auth.hasPermission('PURCHASES.RECEIVE'); }
   get canRecordPurchasePayment(): boolean { return this.auth.hasPermission('PURCHASES.PAYMENT_RECORD'); }
   get canAdjustStock(): boolean { return this.auth.hasPermission('INVENTORY.ADJUST'); }
+  get canReconcileStock(): boolean { return this.auth.hasPermission('INVENTORY.RECONCILE'); }
   get canCreateRegister(): boolean { return this.auth.hasPermission('CASH_REGISTER.CREATE'); }
   get canOpenRegister(): boolean { return this.auth.hasPermission('CASH_REGISTER.OPEN'); }
   get canCloseRegister(): boolean { return this.auth.hasPermission('CASH_REGISTER.CLOSE'); }
@@ -102,10 +168,11 @@ export class OperationsPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.type.set(this.route.snapshot.data['operationType'] as OperationType);
+    this.loadMyActiveCashSession();
     if (this.type() === 'purchases') { this.loadPurchases(); this.loadPurchaseLookups(); }
-    if (this.type() === 'inventory') { this.loadStock(); this.loadStockOptions(); }
-    if (this.type() === 'cash-register') this.loadRegisters();
-    if (this.type() === 'daily-closing') this.loadClosings();
+    if (this.type() === 'inventory') { this.loadInventorySummary(); this.loadStock(); this.loadStockOptions(); }
+    if (this.type() === 'cash-register') { this.loadRegisters(); this.loadSessionHistory(); }
+    if (this.type() === 'daily-closing') { this.loadClosings(); this.previewDailyClosing(); }
   }
 
   private purchaseLine() {
@@ -132,40 +199,147 @@ export class OperationsPageComponent implements OnInit {
   }
 
   loadPurchases(): void {
+    if (this.purchaseFromDate() && this.purchaseToDate() && this.purchaseFromDate() > this.purchaseToDate()) {
+      this.toast.error('From date cannot be later than To date.');
+      return;
+    }
     this.loading.set(true);
     let params = new HttpParams().set('page', String(this.page())).set('size', '20').set('sortBy', 'id').set('sortDir', 'desc');
     if (this.search().trim()) params = params.set('search', this.search().trim());
+    if (this.purchaseStatusFilter()) params = params.set('status', this.purchaseStatusFilter());
+    if (this.purchasePaymentFilter()) params = params.set('paymentStatus', this.purchasePaymentFilter());
+    if (this.purchaseSupplierFilter()) {
+      const supplier = this.suppliers().find(x => x.uuid === this.purchaseSupplierFilter());
+      if (supplier) params = params.set('supplierUuid', supplier.uuid);
+    }
+    if (this.purchaseOnlyOutstanding()) params = params.set('onlyOutstanding', 'true');
+    if (this.purchaseFromDate()) params = params.set('fromDate', this.purchaseFromDate());
+    if (this.purchaseToDate()) params = params.set('toDate', this.purchaseToDate());
     this.http.get<Page<Purchase>>(`${this.base}/purchases/paged`, { params }).pipe(finalize(() => this.loading.set(false)))
       .subscribe({ next: r => this.setPage(r), error: () => this.toast.error('Purchases could not be loaded.') });
   }
+
+  resetPurchaseFilters(): void {
+    this.search.set('');
+    this.purchaseStatusFilter.set('');
+    this.purchasePaymentFilter.set('');
+    this.purchaseSupplierFilter.set('');
+    this.purchaseFromDate.set('');
+    this.purchaseToDate.set('');
+    this.purchaseOnlyOutstanding.set(false);
+    this.page.set(0);
+    this.loadPurchases();
+  }
+
   openPurchaseForm(): void {
+    this.editingPurchaseUuid.set(null);
     this.purchaseForm.reset({ supplierId: null, supplierInvoiceNo: '', purchaseDate: this.today, notes: '' });
     this.purchaseLines.clear(); this.purchaseLines.push(this.purchaseLine()); this.showForm.set(true);
   }
+  closePurchaseForm(): void {
+    this.showForm.set(false);
+    this.editingPurchaseUuid.set(null);
+  }
+  editPurchaseDraft(p: Purchase): void {
+    if (p.status !== 'DRAFT') return;
+    this.selected.set(null);
+    this.editingPurchaseUuid.set(p.uuid);
+    this.purchaseForm.reset({
+      supplierId: p.supplierId,
+      supplierInvoiceNo: p.supplierInvoiceNo,
+      purchaseDate: p.purchaseDate,
+      notes: p.notes ?? ''
+    });
+    this.purchaseLines.clear();
+    for (const line of p.products ?? []) {
+      const grp = this.purchaseLine();
+      grp.patchValue({
+        productId: line.productId,
+        quantity: Number(line.quantity),
+        purchasePrice: Number(line.purchasePrice),
+        discountAmount: Number(line.discountAmount ?? 0),
+        taxPercent: Number(line.taxPercent ?? 0)
+      });
+      this.purchaseLines.push(grp);
+    }
+    if (this.purchaseLines.length === 0) this.purchaseLines.push(this.purchaseLine());
+    this.showForm.set(true);
+  }
+  purchaseTotals() {
+    let subtotal = 0, discount = 0, taxable = 0, tax = 0;
+    for (const line of this.purchaseLines.getRawValue()) {
+      const gross = Math.round(((Number(line.quantity) || 0) * (Number(line.purchasePrice) || 0) + Number.EPSILON) * 100) / 100;
+      const disc = Math.round(((Number(line.discountAmount) || 0) + Number.EPSILON) * 100) / 100;
+      const txbl = Math.max(0, gross - disc);
+      const tx = Math.round((txbl * (Number(line.taxPercent) || 0) / 100 + Number.EPSILON) * 100) / 100;
+      subtotal += gross; discount += disc; taxable += txbl; tax += tx;
+    }
+    return { subtotal, discount, taxable, tax, grandTotal: taxable + tax };
+  }
   createPurchase(): void {
     if (this.purchaseForm.invalid || this.saving()) { this.purchaseForm.markAllAsTouched(); return; }
-    this.saving.set(true);
     const v = this.purchaseForm.getRawValue();
+    const productIds = (v.products ?? []).map(p => Number(p.productId));
+    if (new Set(productIds).size !== productIds.length) {
+      this.toast.error('Duplicate products are not allowed in a single purchase.');
+      return;
+    }
+    this.saving.set(true);
     const payload = { supplierId: Number(v.supplierId), supplierInvoiceNo: v.supplierInvoiceNo, purchaseDate: v.purchaseDate,
       notes: v.notes || undefined, products: (v.products ?? []).map(p => ({ productId: Number(p.productId), quantity: Number(p.quantity),
         purchasePrice: Number(p.purchasePrice), discountAmount: Number(p.discountAmount), taxPercent: Number(p.taxPercent) })) };
-    this.http.post<Purchase>(`${this.base}/purchases`, payload).pipe(finalize(() => this.saving.set(false)))
-      .subscribe({ next: () => { this.showForm.set(false); this.toast.success('Purchase draft created. Receive it after checking the supplier invoice.'); this.loadPurchases(); },
-        error: () => this.toast.error('Purchase could not be created. Check the entered details.') });
+    const editUuid = this.editingPurchaseUuid();
+    const req$ = editUuid
+      ? this.http.put<Purchase>(`${this.base}/purchases/${editUuid}`, payload)
+      : this.http.post<Purchase>(`${this.base}/purchases`, payload);
+    req$.pipe(finalize(() => this.saving.set(false)))
+      .subscribe({ next: () => {
+          this.closePurchaseForm();
+          this.toast.success(editUuid ? 'Purchase draft updated.' : 'Purchase draft created. Receive it after checking the supplier invoice.');
+          this.loadPurchases();
+        },
+        error: e => this.toast.error(e?.error?.message || 'Purchase could not be saved.') });
+  }
+  cancelPurchaseDraft(p: Purchase): void {
+    if (!this.canCancelPurchase || p.status !== 'DRAFT' || this.saving()) return;
+    this.saving.set(true);
+    this.http.post<Purchase>(`${this.base}/purchases/${p.uuid}/cancel`, { reason: 'Draft cancelled by user' })
+      .pipe(finalize(() => this.saving.set(false)))
+      .subscribe({
+        next: () => { this.selected.set(null); this.toast.success(`Purchase ${p.purchaseNumber} cancelled.`); this.loadPurchases(); },
+        error: e => this.toast.error(e?.error?.message || 'Could not cancel purchase draft.')
+      });
   }
   receivePurchase(p: Purchase): void {
-    if (!this.canReceivePurchase || p.status !== 'DRAFT') return;
-    if (!confirm(`Receive purchase ${p.purchaseNumber}? This will update inventory.`)) return;
-    this.http.post<Purchase>(`${this.base}/purchases/${p.uuid}/receive`, {}).subscribe({
-      next: () => { this.toast.success(`Purchase ${p.purchaseNumber} received and stock updated.`); this.loadPurchases(); },
-      error: () => this.toast.error('Purchase receiving failed.')
+    if (!this.canReceivePurchase || p.status !== 'DRAFT' || this.saving()) return;
+    this.saving.set(true);
+    this.http.post<Purchase>(`${this.base}/purchases/${p.uuid}/receive`, {}).pipe(finalize(() => this.saving.set(false))).subscribe({
+      next: updated => {
+        this.selected.set(updated);
+        this.loadPurchasePaymentSummary(updated.uuid);
+        this.toast.success(`Purchase ${p.purchaseNumber} received and stock updated.`);
+        this.loadPurchases();
+      },
+      error: e => this.toast.error(e?.error?.message || 'Purchase receiving failed.')
     });
   }
   openPurchaseDetails(p: Purchase): void {
-    this.http.get<Purchase>(`${this.base}/purchases/${p.uuid}`).subscribe({ next: r => this.selected.set(r), error: () => this.toast.error('Purchase details could not be loaded.') });
+    this.purchasePaymentSummary.set(null);
+    this.http.get<Purchase>(`${this.base}/purchases/${p.uuid}`).subscribe({
+      next: r => {
+        this.selected.set(r);
+        if (r.status === 'RECEIVED') this.loadPurchasePaymentSummary(r.uuid);
+      },
+      error: () => this.toast.error('Purchase details could not be loaded.')
+    });
+  }
+  private loadPurchasePaymentSummary(purchaseUuid: string): void {
+    this.http.get<any>(`${this.base}/purchases/${purchaseUuid}/payments`)
+      .pipe(catchError(() => of(null)))
+      .subscribe(summary => this.purchasePaymentSummary.set(summary));
   }
   openPurchasePayment(p: Purchase): void {
-    this.selected.set(p);
+    this.openPurchaseDetails(p);
     this.paymentForm.reset({ paymentMethod: 'CASH', amount: null, referenceNumber: '', notes: '' });
   }
   recordPurchasePayment(): void {
@@ -174,16 +348,87 @@ export class OperationsPageComponent implements OnInit {
     this.saving.set(true); const v = this.paymentForm.getRawValue();
     this.http.post(`${this.base}/purchases/${p.uuid}/payments`, { paymentMethod: v.paymentMethod, amount: Number(v.amount),
       referenceNumber: v.referenceNumber || undefined, notes: v.notes || undefined }).pipe(finalize(() => this.saving.set(false)))
-      .subscribe({ next: () => { this.selected.set(null); this.toast.success('Supplier payment recorded.'); this.loadPurchases(); },
-        error: () => this.toast.error('Supplier payment could not be recorded.') });
+      .subscribe({ next: () => {
+          this.paymentForm.reset({ paymentMethod: 'CASH', amount: null, referenceNumber: '', notes: '' });
+          this.toast.success('Supplier payment recorded.');
+          this.loadPurchasePaymentSummary(p.uuid);
+          this.loadPurchases();
+        },
+        error: e => this.toast.error(e?.error?.message || 'Supplier payment could not be recorded.') });
+  }
+
+  loadInventorySummary(): void {
+    this.http.get<any>(`${this.base}/inventory/summary`)
+      .pipe(catchError(() => of(null)))
+      .subscribe(s => this.inventorySummary.set(s));
   }
 
   loadStock(): void {
     this.loading.set(true);
     let params = new HttpParams().set('page', String(this.page())).set('size', '20').set('sortBy', 'productName').set('sortDir', 'asc');
     if (this.search().trim()) params = params.set('search', this.search().trim());
+    if (this.stockStatusFilter() && this.stockStatusFilter() !== 'ALL') params = params.set('stockStatus', this.stockStatusFilter());
     this.http.get<Page<Stock>>(`${this.base}/inventory/stock/paged`, { params }).pipe(finalize(() => this.loading.set(false)))
       .subscribe({ next: r => this.setPage(r), error: () => this.toast.error('Inventory stock could not be loaded.') });
+  }
+
+  loadMovements(): void {
+    this.loading.set(true);
+    let params = new HttpParams().set('page', String(this.movementPage())).set('size', '20');
+    if (this.search().trim()) params = params.set('search', this.search().trim());
+    if (this.movementTypeFilter()) params = params.set('movementType', this.movementTypeFilter());
+    if (this.movementFromDate()) params = params.set('fromDate', this.movementFromDate());
+    if (this.movementToDate()) params = params.set('toDate', this.movementToDate());
+    this.http.get<any>(`${this.base}/inventory/movements`, { params }).pipe(finalize(() => this.loading.set(false)))
+      .subscribe({
+        next: r => {
+          this.movements.set(r.content ?? []);
+          this.movementTotalPages.set(r.totalPages ?? 0);
+        },
+        error: () => this.toast.error('Inventory movements could not be loaded.')
+      });
+  }
+
+  adjustmentPreviewQty(): number {
+    const stock = this.selected() as Stock | null;
+    if (!stock) return 0;
+    return Math.round(((Number(stock.quantity) + (Number(this.adjustmentForm.controls.quantityChange.value) || 0)) + Number.EPSILON) * 1000) / 1000;
+  }
+
+  openReconcile(row: Stock): void {
+    this.selected.set(row);
+    this.reconcileForm.reset({ physicalQuantity: Number(row.quantity), reason: '', notes: '' });
+    this.showReconcile.set(true);
+  }
+
+  reconcileDifference(): number {
+    const stock = this.selected() as Stock | null;
+    if (!stock) return 0;
+    const counted = Number(this.reconcileForm.controls.physicalQuantity.value ?? 0);
+    return Math.round(((counted - Number(stock.quantity)) + Number.EPSILON) * 1000) / 1000;
+  }
+
+  submitReconcile(): void {
+    const stock = this.selected() as Stock | null;
+    if (!stock || this.reconcileForm.invalid || this.saving()) { this.reconcileForm.markAllAsTouched(); return; }
+    this.saving.set(true);
+    const v = this.reconcileForm.getRawValue();
+    this.http.post(`${this.base}/inventory/products/${stock.productUuid}/reconcile`, {
+      physicalQuantity: Number(v.physicalQuantity),
+      reason: v.reason,
+      notes: v.notes || undefined
+    }).pipe(finalize(() => this.saving.set(false)))
+      .subscribe({
+        next: () => {
+          this.showReconcile.set(false);
+          this.selected.set(null);
+          this.toast.success('Physical stock reconciliation recorded.');
+          this.loadInventorySummary();
+          this.loadStock();
+          this.loadStockOptions();
+        },
+        error: e => this.toast.error(e?.error?.message || 'Stock reconciliation failed.')
+      });
   }
   /**
    * Load every active product's current stock for the Add stock selector.
@@ -255,59 +500,215 @@ export class OperationsPageComponent implements OnInit {
       .subscribe({ next: () => { this.showRegisterForm.set(false); this.toast.success('Cash register created.'); this.loadRegisters(); },
         error: () => this.toast.error('Cash register could not be created.') });
   }
+  loadMyActiveCashSession(): void {
+    this.http.get<Session>(`${this.base}/cash-registers/sessions/active/me`, { observe: 'response' })
+      .pipe(catchError(() => of(null)))
+      .subscribe(res => this.myActiveCashSession.set(res && res.status === 200 ? res.body : null));
+  }
+
+  loadSessionHistory(): void {
+    let params = new HttpParams().set('page', String(this.sessionHistoryPage())).set('size', '20');
+    this.http.get<Page<Session>>(`${this.base}/cash-registers/sessions/paged`, { params })
+      .pipe(catchError(() => of({ content: [], page: 0, size: 20, totalElements: 0, totalPages: 0 })))
+      .subscribe(r => {
+        this.sessionHistory.set(r.content ?? []);
+        this.sessionHistoryTotalPages.set(r.totalPages ?? 0);
+      });
+  }
+
+  openMovementsTab(sessionUuid: string): void {
+    this.activeMovementSessionUuid.set(sessionUuid);
+    this.cashTab.set('movements');
+    this.loadSessionMovements(sessionUuid);
+  }
+
+  loadSessionMovements(sessionUuid: string): void {
+    if (!sessionUuid) return;
+    this.http.get<Page<any>>(`${this.base}/cash-registers/sessions/${sessionUuid}/movements/paged`, {
+      params: new HttpParams().set('page', '0').set('size', '50').set('sortBy', 'createdAt').set('sortDir', 'desc')
+    }).subscribe({
+      next: r => this.sessionMovements.set(r.content ?? []),
+      error: () => this.toast.error('Cash movements could not be loaded.')
+    });
+  }
+
+  createManualMovement(): void {
+    const sessionUuid = this.activeMovementSessionUuid();
+    if (!sessionUuid || this.manualMovementForm.invalid || this.saving()) {
+      this.manualMovementForm.markAllAsTouched();
+      return;
+    }
+    this.saving.set(true);
+    const v = this.manualMovementForm.getRawValue();
+    this.http.post(`${this.base}/cash-registers/sessions/${sessionUuid}/movements`, {
+      movementType: v.movementType,
+      amount: Number(v.amount),
+      description: v.description?.trim()
+    }).pipe(finalize(() => this.saving.set(false)))
+      .subscribe({
+        next: () => {
+          this.manualMovementForm.reset({ movementType: 'IN', amount: null, description: '' });
+          this.toast.success('Manual cash movement recorded.');
+          this.loadSessionMovements(sessionUuid);
+          this.loadRegisters();
+        },
+        error: e => this.toast.error(e?.error?.message || 'Unable to record manual movement.')
+      });
+  }
+
   openSession(r: Register): void {
     this.selectedRegister.set(r);
-    this.openingForm.reset({ openingBalance: 0 });
+    this.openingForm.reset({ openingBalance: 0, openingNotes: '' });
     this.showOpenSession.set(true);
   }
   confirmOpenSession(): void {
     const r = this.selectedRegister();
     if (!r || this.openingForm.invalid || this.saving()) { this.openingForm.markAllAsTouched(); return; }
     this.saving.set(true);
-    const amount = Number(this.openingForm.getRawValue().openingBalance);
-    this.http.post<Session>(`${this.base}/cash-registers/${r.uuid}/sessions`, { openingBalance: amount })
+    const v = this.openingForm.getRawValue();
+    this.http.post<Session>(`${this.base}/cash-registers/${r.uuid}/sessions`, {
+      openingBalance: Number(v.openingBalance),
+      openingNotes: v.openingNotes?.trim() || undefined
+    })
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
-        next: s => { this.activeSessions.update(v => ({ ...v, [r.uuid]: s })); this.showOpenSession.set(false); this.toast.success(`Session opened for ${r.name}.`); },
-        error: () => this.toast.error('Could not open cash session. Check whether another session is already open.')
+        next: s => {
+          this.activeSessions.update(curr => ({ ...curr, [r.uuid]: s }));
+          this.showOpenSession.set(false);
+          this.loadMyActiveCashSession();
+          this.loadSessionHistory();
+          this.toast.success(`Session opened for ${r.name}.`);
+        },
+        error: e => this.toast.error(e?.error?.message || 'Could not open cash session.')
       });
   }
   closeSession(r: Register): void {
     const session = this.activeSessions()[r.uuid];
     if (!session) return;
     this.selectedRegister.set(r);
-    this.closingForm.reset({ actualClosingBalance: Number(session.expectedClosingBalance ?? 0) });
+    this.closingForm.reset({
+      actualClosingBalance: Number(session.expectedClosingBalance ?? 0),
+      useDenominations: false,
+      denomination500: 0,
+      denomination200: 0,
+      denomination100: 0,
+      denomination50: 0,
+      denomination20: 0,
+      denomination10: 0,
+      coinsAmount: 0,
+      differenceReason: ''
+    });
     this.showCloseSession.set(true);
+  }
+  closingDenominationTotal(): number {
+    const v = this.closingForm.getRawValue();
+    const notes =
+      (Number(v.denomination500) || 0) * 500 +
+      (Number(v.denomination200) || 0) * 200 +
+      (Number(v.denomination100) || 0) * 100 +
+      (Number(v.denomination50) || 0) * 50 +
+      (Number(v.denomination20) || 0) * 20 +
+      (Number(v.denomination10) || 0) * 10;
+    return Math.round((notes + (Number(v.coinsAmount) || 0) + Number.EPSILON) * 100) / 100;
+  }
+  closingDifference(): number {
+    const r = this.selectedRegister();
+    const session = r ? this.activeSessions()[r.uuid] : null;
+    if (!session) return 0;
+    const actual = this.closingForm.controls.useDenominations.value
+      ? this.closingDenominationTotal()
+      : Number(this.closingForm.controls.actualClosingBalance.value ?? 0);
+    return Math.round((actual - Number(session.expectedClosingBalance ?? 0) + Number.EPSILON) * 100) / 100;
   }
   confirmCloseSession(): void {
     const r = this.selectedRegister();
     const session = r ? this.activeSessions()[r.uuid] : null;
     if (!r || !session || this.closingForm.invalid || this.saving()) { this.closingForm.markAllAsTouched(); return; }
     this.saving.set(true);
-    const amount = Number(this.closingForm.getRawValue().actualClosingBalance);
-    this.http.post<Session>(`${this.base}/cash-registers/sessions/${session.uuid}/close`, { actualClosingBalance: amount })
+    const v = this.closingForm.getRawValue();
+    const payload = {
+      actualClosingBalance: v.useDenominations ? this.closingDenominationTotal() : Number(v.actualClosingBalance),
+      useDenominations: Boolean(v.useDenominations),
+      denomination500: Number(v.denomination500 || 0),
+      denomination200: Number(v.denomination200 || 0),
+      denomination100: Number(v.denomination100 || 0),
+      denomination50: Number(v.denomination50 || 0),
+      denomination20: Number(v.denomination20 || 0),
+      denomination10: Number(v.denomination10 || 0),
+      coinsAmount: Number(v.coinsAmount || 0),
+      differenceReason: v.differenceReason?.trim() || undefined
+    };
+    this.http.post<Session>(`${this.base}/cash-registers/sessions/${session.uuid}/close`, payload)
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
-        next: s => { this.activeSessions.update(v => ({ ...v, [r.uuid]: s })); this.showCloseSession.set(false); this.toast.success(`Session closed for ${r.name}.`); },
-        error: () => this.toast.error('Cash session could not be closed.')
+        next: s => {
+          this.activeSessions.update(curr => ({ ...curr, [r.uuid]: s }));
+          this.showCloseSession.set(false);
+          this.loadMyActiveCashSession();
+          this.loadSessionHistory();
+          this.toast.success(`Session closed for ${r.name}.`);
+        },
+        error: e => this.toast.error(e?.error?.message || 'Cash session could not be closed.')
       });
   }
 
   loadClosings(): void {
     this.loading.set(true);
-    const params = new HttpParams().set('page', String(this.page())).set('size', '20').set('sortBy', 'businessDate').set('sortDir', 'desc');
+    let params = new HttpParams().set('page', String(this.page())).set('size', '20').set('sortBy', 'businessDate').set('sortDir', 'desc');
+    if (this.closingFromDate()) params = params.set('fromDate', this.closingFromDate());
+    if (this.closingToDate()) params = params.set('toDate', this.closingToDate());
     this.http.get<Page<Closing>>(`${this.base}/daily-closings/paged`, { params }).pipe(finalize(() => this.loading.set(false)))
       .subscribe({ next: r => this.setPage(r), error: () => this.toast.error('Daily closing history could not be loaded.') });
+  }
+  previewDailyClosing(): void {
+    const date = this.dailyForm.controls.businessDate.value;
+    if (!date) return;
+    this.previewLoading.set(true);
+    this.http.get<any>(`${this.base}/daily-closings/preview`, { params: new HttpParams().set('businessDate', date) })
+      .pipe(finalize(() => this.previewLoading.set(false)))
+      .subscribe({
+        next: p => this.dailyPreview.set(p),
+        error: () => this.dailyPreview.set(null)
+      });
   }
   performClosing(): void {
     if (this.dailyForm.invalid || this.saving()) { this.dailyForm.markAllAsTouched(); return; }
     const v = this.dailyForm.getRawValue();
-    if (!confirm(`Perform daily closing for ${v.businessDate}? This operation should be done after all transactions are reconciled.`)) return;
     this.saving.set(true);
     const params = new HttpParams().set('businessDate', v.businessDate!).set('notes', v.notes ?? '');
     this.http.post<Closing>(`${this.base}/daily-closings`, null, { params }).pipe(finalize(() => this.saving.set(false)))
-      .subscribe({ next: () => { this.toast.success('Daily closing completed.'); this.loadClosings(); },
-        error: () => this.toast.error('Daily closing failed. Verify that the date has not already been closed.') });
+      .subscribe({ next: closing => {
+          this.toast.success('Daily closing completed.');
+          this.selectedClosing.set(closing);
+          this.loadClosings();
+          this.previewDailyClosing();
+        },
+        error: e => this.toast.error(e?.error?.message || 'Daily closing failed.') });
+  }
+  exportClosingExcel(c: Closing): void {
+    const s = c.summary ?? {};
+    const rows = [
+      { Metric: 'Business Date', Value: c.businessDate },
+      { Metric: 'Sales Count', Value: s.salesCount ?? 0 },
+      { Metric: 'Sales Total', Value: s.salesTotal ?? 0 },
+      { Metric: 'Sales Paid', Value: s.salesPaidTotal ?? 0 },
+      { Metric: 'Sales Balance', Value: s.salesBalanceTotal ?? 0 },
+      { Metric: 'Sales Cash', Value: s.salesCashTotal ?? 0 },
+      { Metric: 'Sales UPI', Value: s.salesUpiTotal ?? 0 },
+      { Metric: 'Sales Card', Value: s.salesCardTotal ?? 0 },
+      { Metric: 'Sales Bank', Value: s.salesBankTotal ?? 0 },
+      { Metric: 'Sales Returns', Value: s.salesReturnTotal ?? 0 },
+      { Metric: 'Sales Refunds', Value: s.salesRefundTotal ?? 0 },
+      { Metric: 'Purchases Total', Value: s.purchaseTotal ?? 0 },
+      { Metric: 'Expenses Total', Value: s.expenseTotal ?? 0 },
+      { Metric: 'Cash Expected', Value: s.cashExpectedTotal ?? 0 },
+      { Metric: 'Cash Actual', Value: s.cashActualTotal ?? 0 },
+      { Metric: 'Cash Difference', Value: s.cashDifferenceTotal ?? 0 }
+    ];
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'DailyClosing');
+    XLSX.writeFile(wb, `daily-closing-${c.businessDate}.xlsx`);
   }
 
   hasCashDifference(value: number | null | undefined): boolean { return Number(value ?? 0) !== 0; }

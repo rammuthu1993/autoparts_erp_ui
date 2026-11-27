@@ -1,26 +1,74 @@
-<div class="backdrop" (click)="$event.target === $event.currentTarget && vm.showForm.set(false)">
+<div class="backdrop" (click)="$event.target === $event.currentTarget && vm.closePurchaseForm()">
   <section class="modal wide" (click)="$event.stopPropagation()">
-    <header><div><h2>Create purchase draft</h2><p>Enter the supplier invoice details and purchased items.</p></div><button class="close" type="button" (click)="vm.showForm.set(false)">×</button></header>
+    <header>
+      <div>
+        <h2>{{ vm.editingPurchaseUuid() ? 'Edit purchase draft' : 'Create purchase draft' }}</h2>
+        <p>Enter the supplier invoice details and purchased items.</p>
+      </div>
+      <button class="close" type="button" (click)="vm.closePurchaseForm()">×</button>
+    </header>
     <form [formGroup]="vm.purchaseForm" (ngSubmit)="vm.createPurchase()">
       <div class="form-grid">
-        <label>Supplier *<select formControlName="supplierId"><option [ngValue]="null">Select supplier</option>@for(s of vm.suppliers(); track s.id) { <option [ngValue]="s.id">{{ s.supplierName }}</option> }</select></label>
-        <label>Supplier invoice no. *<input formControlName="supplierInvoiceNo"></label>
-        <label>Purchase date *<input type="date" formControlName="purchaseDate"></label>
-        <label>Notes<input formControlName="notes"></label>
+        <label>Supplier *
+          <select formControlName="supplierId">
+            <option [ngValue]="null">Select supplier</option>
+            @for(s of vm.suppliers(); track s.id) { <option [ngValue]="s.id">{{ s.supplierName }}</option> }
+          </select>
+          @if (vm.purchaseForm.controls.supplierId.touched && vm.purchaseForm.controls.supplierId.invalid) {
+            <small class="field-error">Supplier is required.</small>
+          }
+        </label>
+        <label>Supplier invoice no. *
+          <input formControlName="supplierInvoiceNo" maxlength="100">
+          @if ((vm.purchaseForm.controls.supplierInvoiceNo.dirty || vm.purchaseForm.controls.supplierInvoiceNo.touched) && vm.purchaseForm.controls.supplierInvoiceNo.invalid) {
+            <small class="field-error">Supplier invoice number is required.</small>
+          }
+        </label>
+        <label>Purchase date *
+          <input type="date" formControlName="purchaseDate">
+        </label>
+        <label>Notes
+          <input formControlName="notes" maxlength="1000">
+        </label>
       </div>
-      <div class="line-title"><strong>Purchase items</strong><button type="button" class="secondary" (click)="vm.addPurchaseLine()">+ Add item</button></div>
+      <div class="line-title">
+        <strong>Purchase items</strong>
+        <button type="button" class="secondary" (click)="vm.addPurchaseLine()">+ Add item</button>
+      </div>
       <div formArrayName="products" class="line-list">
         @for(line of vm.purchaseLines.controls; let i = $index; track i) {
           <div class="purchase-line" [formGroupName]="i">
-            <label class="product-select">Product *<select formControlName="productId" (change)="vm.onPurchaseProductSelected(i)"><option [ngValue]="null">Select product</option>@for(p of vm.products(); track p.id) { <option [ngValue]="p.id">{{ p.productCode }} · {{ p.name }}</option> }</select></label>
+            <label class="product-select">Product *
+              <select formControlName="productId" (change)="vm.onPurchaseProductSelected(i)">
+                <option [ngValue]="null">Select product</option>
+                @for(p of vm.products(); track p.id) {
+                  <option [ngValue]="p.id">{{ p.productCode }} · {{ p.name }} (Stock: {{ p.qty ?? 0 }} {{ p.unit }})</option>
+                }
+              </select>
+            </label>
             <label>Qty *<input type="number" min="0.001" step="0.001" formControlName="quantity"></label>
             <label>Unit cost *<input type="number" min="0" step="0.01" formControlName="purchasePrice"></label>
-            <label>Discount *<input type="number" min="0" step="0.01" formControlName="discountAmount"></label>
-            <label>GST % *<input type="number" min="0" max="100" step="0.01" formControlName="taxPercent"></label>
+            <label>Discount<input type="number" min="0" step="0.01" formControlName="discountAmount"></label>
+            <label>GST %<input type="number" min="0" max="100" step="0.01" formControlName="taxPercent"></label>
             <button type="button" class="remove" (click)="vm.removePurchaseLine(i)" [disabled]="vm.purchaseLines.length===1">×</button>
           </div>
         }
       </div>
-      <footer><button type="button" class="secondary" (click)="vm.showForm.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="vm.saving()">{{ vm.saving() ? 'Saving…' : 'Create draft' }}</button></footer>
+      @if (vm.purchaseTotals(); as totals) {
+        <div class="detail-lines">
+          <div><span>Subtotal</span><strong>{{ vm.money(totals.subtotal) }}</strong></div>
+          <div><span>Discount</span><strong>{{ vm.money(totals.discount) }}</strong></div>
+          <div><span>Taxable</span><strong>{{ vm.money(totals.taxable) }}</strong></div>
+          <div><span>GST (CGST+SGST)</span><strong>{{ vm.money(totals.tax) }}</strong></div>
+          <div><span>Grand total</span><strong>{{ vm.money(totals.grandTotal) }}</strong></div>
+        </div>
+      }
+      <footer>
+        <button type="button" class="secondary" (click)="vm.closePurchaseForm()">Cancel</button>
+        <button type="submit" class="primary" [disabled]="vm.saving() || vm.purchaseForm.invalid">
+          {{ vm.saving() ? 'Saving…' : (vm.editingPurchaseUuid() ? 'Update draft' : 'Create draft') }}
+        </button>
+      </footer>
     </form>
-  </section></div>
+  </section>
+</div>

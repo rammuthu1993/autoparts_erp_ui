@@ -1,22 +1,52 @@
 <div class="finance-modal-backdrop" (click)="$event.target === $event.currentTarget && vm.closeSalesReturnDetail()">
-      <article class="panel finance-dialog" role="dialog" aria-modal="true" aria-label="Sales return details">
-        <header class="finance-dialog-header"><div><h2>Sales return {{r.returnNumber || 'Reference unavailable'}}</h2><p>{{r.invoiceNumber}} · {{r.returnDate | date:'mediumDate'}} · {{r.status}}</p></div><button type="button" class="finance-dialog-close" (click)="vm.closeSalesReturnDetail()" aria-label="Close">×</button></header>
-        <div class="table-wrap"><table><thead><tr><th>Product</th><th>Code</th><th>Returned quantity</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>
-          @for(line of r.products ?? []; track line.uuid) { <tr><td>{{line.productName}}</td><td>{{line.productCode}}</td><td>{{line.quantity}}</td><td>{{line.unitPrice | currency:'INR'}}</td><td>{{line.lineTotal | currency:'INR'}}</td> } 
-        </tbody></table></div>
-        <p>Return total {{r.totalReturnAmount | currency:'INR'}} · Refunded {{r.refundedAmount | currency:'INR'}} · Refundable {{r.refundableAmount | currency:'INR'}}</p>
-        @if((r.refunds ?? []).length) {
-          <h3>Refund history</h3>
-          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Reference</th></tr></thead><tbody>
-            @for(refund of r.refunds; track refund.uuid) { <tr><td>{{refund.refundDate | date:'mediumDate'}}</td><td>{{refund.paymentMethod}}</td><td>{{refund.amount | currency:'INR'}}</td><td>{{refund.referenceNumber || '—'}}</td></tr> }
-          </tbody></table></div>
-        }
-        <div class="form-grid">
-          <label>Refund method<select [ngModel]="vm.refundForm().paymentMethod" (ngModelChange)="vm.setRefund('paymentMethod', $event)">@for(m of vm.paymentMethods; track m) { <option [value]="m">{{m}}</option> }</select></label>
-          <label>Amount<input type="number" min="0.01" [ngModel]="vm.refundForm().amount" (ngModelChange)="vm.setRefund('amount', +$event)"></label>
-          <label>Reference<input [ngModel]="vm.refundForm().referenceNumber" (ngModelChange)="vm.setRefund('referenceNumber', $event)"></label>
-          <label>Notes<input [ngModel]="vm.refundForm().notes" (ngModelChange)="vm.setRefund('notes', $event)"></label>
-        </div>
-        <button class="primary" [disabled]="vm.saving() || !vm.canRefundSales()" (click)="vm.recordSalesRefund(r)" data-tooltip="Record customer refund">↗ Record refund</button>
-      </article>
+  <article class="panel finance-dialog" role="dialog" aria-modal="true" aria-label="Sales return details">
+    <header class="finance-dialog-header">
+      <div>
+        <h2>Sales return {{r.returnNumber || r.uuid}}</h2>
+        <p>{{r.invoiceNumber}} · {{r.returnDate | date:'mediumDate'}} · {{r.status}}</p>
       </div>
+      <button type="button" class="finance-dialog-close" (click)="vm.closeSalesReturnDetail()" aria-label="Close">×</button>
+    </header>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Product</th><th>Code</th><th>Returned qty</th><th>Unit price</th><th>Line total</th></tr></thead>
+        <tbody>
+          @for(line of r.products ?? []; track line.uuid) {
+            <tr><td>{{line.productName}}</td><td>{{line.productCode}}</td><td>{{line.quantity}}</td><td>{{line.unitPrice | currency:'INR'}}</td><td>{{line.lineTotal | currency:'INR'}}</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p>Return total {{r.totalReturnAmount | currency:'INR'}} · Refunded {{r.refundedAmount | currency:'INR'}} · Refundable {{r.refundableAmount | currency:'INR'}}</p>
+    @if((r.refunds ?? []).length) {
+      <h3>Refund history</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Reference</th></tr></thead>
+          <tbody>
+            @for(refund of r.refunds; track refund.uuid) {
+              <tr><td>{{refund.refundDate | date:'mediumDate'}}</td><td>{{refund.paymentMethod}}</td><td>{{refund.amount | currency:'INR'}}</td><td>{{refund.referenceNumber || '—'}}</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+    @if (r.refundableAmount > 0 && vm.canRefundSales()) {
+      @if (vm.refundForm().paymentMethod === 'CASH' && !vm.myActiveCashSession()) {
+        <p class="field-error">No active cash register session is open for your user. Open a cash session before issuing a CASH refund.</p>
+      }
+      <div class="form-grid">
+        <label>Refund method<select [ngModel]="vm.refundForm().paymentMethod" (ngModelChange)="vm.setRefund('paymentMethod', $event)">@for(m of vm.paymentMethods; track m) { <option [value]="m">{{m}}</option> }</select></label>
+        <label>Amount *
+          <input type="number" min="0.01" [max]="r.refundableAmount" step="0.01" [ngModel]="vm.refundForm().amount" (ngModelChange)="vm.setRefund('amount', +$event)">
+          @if (vm.refundForm().amount > r.refundableAmount) {
+            <small class="field-error">Refund cannot exceed refundable amount ({{r.refundableAmount | currency:'INR'}}).</small>
+          }
+        </label>
+        <label>Reference<input [ngModel]="vm.refundForm().referenceNumber" (ngModelChange)="vm.setRefund('referenceNumber', $event)" maxlength="100"></label>
+        <label>Notes<input [ngModel]="vm.refundForm().notes" (ngModelChange)="vm.setRefund('notes', $event)" maxlength="500"></label>
+      </div>
+      <button class="primary" [disabled]="vm.saving() || vm.refundForm().amount <= 0 || vm.refundForm().amount > r.refundableAmount || (vm.refundForm().paymentMethod === 'CASH' && !vm.myActiveCashSession())" (click)="vm.recordSalesRefund(r)" data-tooltip="Record customer refund">↗ Record refund</button>
+    }
+  </article>
+</div>

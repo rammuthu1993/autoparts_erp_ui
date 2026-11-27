@@ -4,23 +4,85 @@
       <p>
         @switch (type()) {
           @case ('purchases') { Record supplier purchases, receive stock and track supplier payments. }
-          @case ('inventory') { Monitor stock levels and record controlled stock adjustments. }
-          @case ('cash-register') { Manage cash registers and opening or closing sessions. }
-          @case ('daily-closing') { Review business-day summaries and perform end-of-day closing. }
+          @case ('inventory') { Monitor stock levels, audit movements, and reconcile physical counts. }
+          @case ('cash-register') { Manage cash registers, shift sessions, denominations, and cash movements. }
+          @case ('daily-closing') { Preview business-day summaries, reconcile cash, and close the day. }
         }
       </p>
     </div>
     @if (type() === 'purchases' && canCreatePurchase) { <button class="primary" (click)="openPurchaseForm()">+ New purchase</button> }
-    @if (type() === 'inventory' && canAdjustStock) { <button class="primary" (click)="openNewStockAdjustment()">+ Add stock</button> }
+    @if (type() === 'inventory' && canAdjustStock) { <button class="primary" (click)="openNewStockAdjustment()">+ Add / adjust stock</button> }
     @if (type() === 'cash-register' && canCreateRegister) { <button class="primary" (click)="showRegisterForm.set(true)">+ New register</button> }
   </header>
 
-  @if (type() === 'purchases' || type() === 'inventory' || type() === 'daily-closing') {
+  @if (type() === 'purchases') {
     <div class="toolbar">
-      @if (type() !== 'daily-closing') {
-        <input aria-label="Search" [value]="search()" (input)="onSearch($any($event.target).value)" placeholder="Search by code, name or reference">
-      }
+      <input aria-label="Search purchases" [value]="search()" (input)="onSearch($any($event.target).value)" placeholder="Search purchase no., supplier, or invoice">
+      <select aria-label="Purchase status" [value]="purchaseStatusFilter()" (change)="purchaseStatusFilter.set($any($event.target).value); page.set(0); loadPurchases()">
+        <option value="">All statuses</option>
+        <option value="DRAFT">Draft</option>
+        <option value="RECEIVED">Received</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+      <select aria-label="Payment status" [value]="purchasePaymentFilter()" (change)="purchasePaymentFilter.set($any($event.target).value); page.set(0); loadPurchases()">
+        <option value="">All payment statuses</option>
+        <option value="UNPAID">Unpaid</option>
+        <option value="PARTIALLY_PAID">Partially paid</option>
+        <option value="PAID">Paid</option>
+      </select>
+      <select aria-label="Supplier" [value]="purchaseSupplierFilter()" (change)="purchaseSupplierFilter.set($any($event.target).value); page.set(0); loadPurchases()">
+        <option value="">All suppliers</option>
+        @for (supplier of suppliers(); track supplier.uuid) { <option [value]="supplier.uuid">{{ supplier.supplierName }}</option> }
+      </select>
+      <label class="outstanding-filter"><input type="checkbox" [checked]="purchaseOnlyOutstanding()" (change)="purchaseOnlyOutstanding.set($any($event.target).checked); page.set(0); loadPurchases()"> Outstanding only</label>
+      <input type="date" aria-label="From date" [value]="purchaseFromDate()" (change)="purchaseFromDate.set($any($event.target).value); page.set(0); loadPurchases()">
+      <input type="date" aria-label="To date" [value]="purchaseToDate()" (change)="purchaseToDate.set($any($event.target).value); page.set(0); loadPurchases()">
+      <button type="button" class="secondary" (click)="resetPurchaseFilters()">Reset filters</button>
+      <button type="button" class="secondary" (click)="loadPurchases()">Refresh</button>
       <span class="record-count">{{ totalElements() }} records</span>
+    </div>
+  }
+
+  @if (type() === 'inventory') {
+    <div class="toolbar">
+      <button type="button" [class]="inventoryTab() === 'stock' ? 'primary' : 'secondary'" (click)="inventoryTab.set('stock'); loadStock()">Stock register</button>
+      <button type="button" [class]="inventoryTab() === 'movements' ? 'primary' : 'secondary'" (click)="inventoryTab.set('movements'); loadMovements()">Movements</button>
+      <input aria-label="Search inventory" [value]="search()" (input)="onSearch($any($event.target).value)" placeholder="Search by code, name or notes">
+      @if (inventoryTab() === 'stock') {
+        <select aria-label="Stock status" [value]="stockStatusFilter()" (change)="stockStatusFilter.set($any($event.target).value); page.set(0); loadStock()">
+          <option value="ALL">All stock</option>
+          <option value="IN_STOCK">In stock</option>
+          <option value="LOW_STOCK">Low stock</option>
+          <option value="OUT_OF_STOCK">Out of stock</option>
+        </select>
+      } @else {
+        <select aria-label="Movement type" [value]="movementTypeFilter()" (change)="movementTypeFilter.set($any($event.target).value); movementPage.set(0); loadMovements()">
+          <option value="">All movement types</option>
+          <option value="PURCHASE_RECEIPT">Purchase receipt</option>
+          <option value="SALE">Sale</option>
+          <option value="SALES_RETURN">Sales return</option>
+          <option value="SALES_CANCELLATION">Sales cancellation</option>
+          <option value="PURCHASE_RETURN">Purchase return</option>
+          <option value="ADJUSTMENT">Adjustment</option>
+          <option value="RECONCILIATION">Reconciliation</option>
+          <option value="OPENING_STOCK">Opening stock</option>
+        </select>
+        <input type="date" aria-label="From date" [value]="movementFromDate()" (change)="movementFromDate.set($any($event.target).value); movementPage.set(0); loadMovements()">
+        <input type="date" aria-label="To date" [value]="movementToDate()" (change)="movementToDate.set($any($event.target).value); movementPage.set(0); loadMovements()">
+      }
+    </div>
+  }
+
+  @if (type() === 'cash-register') {
+    <div class="toolbar">
+      <button type="button" [class]="cashTab() === 'registers' ? 'primary' : 'secondary'" (click)="cashTab.set('registers'); loadRegisters()">Registers</button>
+      <button type="button" [class]="cashTab() === 'sessions' ? 'primary' : 'secondary'" (click)="cashTab.set('sessions'); loadSessionHistory()">Session history</button>
+      @if (myActiveCashSession(); as activeSess) {
+        <span class="pill">Active session: {{ activeSess.registerName }} ({{ money(activeSess.expectedClosingBalance) }})</span>
+        <button type="button" class="secondary" (click)="openMovementsTab(activeSess.uuid)">Cash movements</button>
+      } @else {
+        <span class="pill warning">No active cash session open for your user</span>
+      }
     </div>
   }
 
@@ -32,8 +94,10 @@
       <tbody>
         @for (p of rows(); track p.uuid) {
           <tr><td class="strong">{{ p.purchaseNumber }}</td><td>{{ p.supplierName }}</td><td>{{ p.supplierInvoiceNo }}</td><td>{{ p.purchaseDate | date:'dd MMM yyyy' }}</td>
-            <td><span class="pill" [class.warning]="p.status === 'DRAFT'">{{ p.status }}</span></td><td class="right strong">{{ money(p.grandTotal) }}</td>
-            <td class="actions"><button class="link" (click)="openPurchaseDetails(p)">View</button>
+            <td><span class="pill" [class.warning]="p.status === 'DRAFT'" [class.danger]="p.status === 'CANCELLED'">{{ p.status }}</span></td><td class="right strong">{{ money(p.grandTotal) }}</td>
+            <td class="actions">
+              <button class="link" (click)="openPurchaseDetails(p)">View</button>
+              @if (p.status === 'DRAFT' && canCreatePurchase) { <button class="link" (click)="editPurchaseDraft(p)">Edit</button> }
               @if (p.status === 'DRAFT' && canReceivePurchase) { <button class="link" (click)="receivePurchase(p)">Receive</button> }
               @if (p.status === 'RECEIVED' && canRecordPurchasePayment) { <button class="link" (click)="openPurchasePayment(p)">Payment</button> }
             </td>
@@ -44,29 +108,63 @@
     <footer class="table-footer"><span>Page {{ page()+1 }} of {{ totalPages() || 1 }}</span><div><button class="secondary" [disabled]="page()===0" (click)="changePage(-1)">Previous</button><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="changePage(1)">Next</button></div></footer></div>
   }
 
-  @if (!loading() && type() === 'inventory') {
-    <div class="stock-summary"><div><span>Products displayed</span><strong>{{ totalElements() }}</strong></div><div><span>Low stock in this page</span><strong class="warning-text">{{ rows().filter(r => r.lowStock).length }}</strong></div></div>
+  @if (!loading() && type() === 'inventory' && inventoryTab() === 'stock') {
+    @if (inventorySummary(); as sum) {
+      <div class="stock-summary">
+        <div><span>Total active</span><strong>{{ sum.totalActiveProducts }}</strong></div>
+        <div><span>In stock</span><strong>{{ sum.inStockProducts }}</strong></div>
+        <div><span>Low stock</span><strong class="warning-text">{{ sum.lowStockProducts }}</strong></div>
+        <div><span>Out of stock</span><strong class="warning-text">{{ sum.outOfStockProducts }}</strong></div>
+      </div>
+    }
     <div class="table-card"><div class="table-scroll"><table>
       <thead><tr><th>Product code</th><th>Part no.</th><th>Product</th><th class="right">Available</th><th class="right">Minimum</th><th>Status</th><th>Action</th></tr></thead>
       <tbody>
         @for (s of rows(); track s.productUuid) {
           <tr><td class="strong">{{ s.productCode }}</td><td>{{ s.partNo }}</td><td>{{ s.productName }}</td><td class="right strong">{{ s.quantity }} {{ s.unit }}</td><td class="right">{{ s.minimumStock }}</td>
-            <td><span class="pill" [class.danger]="s.lowStock">{{ s.lowStock ? 'LOW STOCK' : 'IN STOCK' }}</span></td>
-            <td>@if (canAdjustStock) { <button class="link" (click)="openAdjustment(s)">Adjust stock</button> }</td>
+            <td><span class="pill" [class.danger]="s.quantity <= 0 || s.lowStock">{{ s.quantity <= 0 ? 'OUT OF STOCK' : (s.lowStock ? 'LOW STOCK' : 'IN STOCK') }}</span></td>
+            <td class="actions">
+              @if (canAdjustStock) { <button class="link" (click)="openAdjustment(s)">Adjust</button> }
+              @if (canReconcileStock) { <button class="link" (click)="openReconcile(s)">Reconcile</button> }
+            </td>
           </tr>
         } @empty { <tr><td colspan="7" class="empty">No inventory records found.</td></tr> }
       </tbody>
     </table></div><footer class="table-footer"><span>Page {{ page()+1 }} of {{ totalPages() || 1 }}</span><div><button class="secondary" [disabled]="page()===0" (click)="changePage(-1)">Previous</button><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="changePage(1)">Next</button></div></footer></div>
   }
 
-  @if (!loading() && type() === 'cash-register') {
+  @if (!loading() && type() === 'inventory' && inventoryTab() === 'movements') {
+    <div class="table-card"><div class="table-scroll"><table>
+      <thead><tr><th>Date/Time</th><th>Product</th><th>Type</th><th>Reference</th><th class="right">Before</th><th class="right">Change</th><th class="right">After</th><th>Notes</th></tr></thead>
+      <tbody>
+        @for (m of movements(); track m.uuid) {
+          <tr>
+            <td>{{ m.createdAt | date:'dd MMM yyyy, h:mm a' }}</td>
+            <td><strong>{{ m.productName }}</strong> ({{ m.productCode }})</td>
+            <td><span class="pill">{{ m.movementType }}</span></td>
+            <td>{{ m.referenceType }} #{{ m.referenceId }}</td>
+            <td class="right">{{ m.quantityBefore }}</td>
+            <td class="right strong">{{ m.quantityChange > 0 ? '+' + m.quantityChange : m.quantityChange }}</td>
+            <td class="right strong">{{ m.quantityAfter }}</td>
+            <td>{{ m.notes || '—' }}</td>
+          </tr>
+        } @empty { <tr><td colspan="8" class="empty">No inventory movements found.</td></tr> }
+      </tbody>
+    </table></div>
+    <footer class="table-footer"><span>Page {{ movementPage()+1 }} of {{ movementTotalPages() || 1 }}</span><div><button class="secondary" [disabled]="movementPage()===0" (click)="movementPage.set(movementPage()-1); loadMovements()">Previous</button><button class="secondary" [disabled]="movementPage()+1>=movementTotalPages()" (click)="movementPage.set(movementPage()+1); loadMovements()">Next</button></div></footer></div>
+  }
+
+  @if (!loading() && type() === 'cash-register' && cashTab() === 'registers') {
     <div class="register-grid">
       @for (r of rows(); track r.uuid) {
         <article class="register-card"><div class="register-head"><div class="register-icon">₹</div><span class="pill" [class.danger]="!r.active">{{ r.active ? 'ACTIVE' : 'INACTIVE' }}</span></div>
           <div class="register-code">{{ r.registerCode }}</div><h2>{{ r.name }}</h2><p>{{ r.description || 'Cash counter register' }}</p>
           @if (activeSessions()[r.uuid]; as session) {
             <div class="session-box"><div><span>Session status</span><strong>{{ session.status }}</strong></div><div><span>Opening balance</span><strong>{{ money(session.openingBalance) }}</strong></div><div><span>Expected cash</span><strong>{{ money(session.expectedClosingBalance) }}</strong></div></div>
-            @if (session.status === 'OPEN' && canCloseRegister) { <button class="primary full" (click)="closeSession(r)">Close session</button> }
+            @if (session.status === 'OPEN') {
+              <button class="secondary full" (click)="openMovementsTab(session.uuid)">View / Record movements</button>
+              @if (canCloseRegister) { <button class="primary full" (click)="closeSession(r)">Close &amp; reconcile session</button> }
+            }
             @if (session.status !== 'OPEN' && r.active && canOpenRegister) { <button class="primary full" (click)="openSession(r)">Open new session</button> }
           } @else {
             <div class="session-box muted-box">No current session detected.</div>
@@ -77,19 +175,93 @@
     </div>
   }
 
-  @if (!loading() && type() === 'daily-closing') {
-    <section class="closing-action"><div><strong>Close business day</strong><p>Reconcile sales, returns, purchases, expenses and cash registers before closing.</p></div>
-      @if (canPerformClosing) {
-        <form [formGroup]="dailyForm" (ngSubmit)="performClosing()" class="closing-form">
-          <input type="date" formControlName="businessDate"><input formControlName="notes" placeholder="Closing notes (optional)">
-          <button class="primary" type="submit" [disabled]="saving()">{{ saving() ? 'Closing…' : 'Perform closing' }}</button>
-        </form>
-      }
+  @if (!loading() && type() === 'cash-register' && cashTab() === 'sessions') {
+    <div class="table-card"><div class="table-scroll"><table>
+      <thead><tr><th>Register</th><th>Opened</th><th>Closed</th><th class="right">Opening</th><th class="right">Expected</th><th class="right">Actual</th><th class="right">Difference</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        @for (s of sessionHistory(); track s.uuid) {
+          <tr>
+            <td class="strong">{{ s.registerName }}</td>
+            <td>{{ s.openedAt | date:'dd MMM yyyy, h:mm a' }}</td>
+            <td>{{ s.closedAt ? (s.closedAt | date:'dd MMM yyyy, h:mm a') : '—' }}</td>
+            <td class="right">{{ money(s.openingBalance) }}</td>
+            <td class="right">{{ money(s.expectedClosingBalance) }}</td>
+            <td class="right">{{ s.actualClosingBalance !== null && s.actualClosingBalance !== undefined ? money(s.actualClosingBalance) : '—' }}</td>
+            <td class="right" [class.warning-text]="hasCashDifference(s.difference)">{{ s.difference !== null && s.difference !== undefined ? money(s.difference) : '—' }}</td>
+            <td><span class="pill" [class.warning]="s.status === 'OPEN'">{{ s.status }}</span></td>
+            <td><button class="link" (click)="openMovementsTab(s.uuid)">Movements</button></td>
+          </tr>
+        } @empty { <tr><td colspan="9" class="empty">No cash sessions found.</td></tr> }
+      </tbody>
+    </table></div>
+    <footer class="table-footer"><span>Page {{ sessionHistoryPage()+1 }} of {{ sessionHistoryTotalPages() || 1 }}</span><div><button class="secondary" [disabled]="sessionHistoryPage()===0" (click)="sessionHistoryPage.set(sessionHistoryPage()-1); loadSessionHistory()">Previous</button><button class="secondary" [disabled]="sessionHistoryPage()+1>=sessionHistoryTotalPages()" (click)="sessionHistoryPage.set(sessionHistoryPage()+1); loadSessionHistory()">Next</button></div></footer></div>
+  }
+
+  @if (!loading() && type() === 'cash-register' && cashTab() === 'movements') {
+    <section class="closing-action">
+      <div><strong>Manual cash movement</strong><p>Record petty cash in or out for the selected session with an explanation.</p></div>
+      <form [formGroup]="manualMovementForm" (ngSubmit)="createManualMovement()" class="closing-form">
+        <select formControlName="movementType"><option value="IN">Cash IN</option><option value="OUT">Cash OUT</option></select>
+        <input type="number" min="0.01" step="0.01" formControlName="amount" placeholder="Amount (₹)">
+        <input formControlName="description" maxlength="300" placeholder="Reason / explanation *">
+        <button class="primary" type="submit" [disabled]="saving() || manualMovementForm.invalid">Add movement</button>
+      </form>
     </section>
-    <div class="table-card"><div class="table-scroll"><table><thead><tr><th>Business date</th><th>Closed at</th><th>Sales</th><th>Purchases</th><th>Expenses</th><th>Cash difference</th></tr></thead>
+    <div class="table-card"><div class="table-scroll"><table>
+      <thead><tr><th>Date/Time</th><th>Type</th><th>Source</th><th class="right">Amount</th><th>Description</th></tr></thead>
+      <tbody>
+        @for (m of sessionMovements(); track m.uuid) {
+          <tr>
+            <td>{{ m.createdAt | date:'dd MMM yyyy, h:mm a' }}</td>
+            <td><span class="pill" [class.danger]="m.movementType === 'OUT'">{{ m.movementType }}</span></td>
+            <td>{{ m.sourceType }}</td>
+            <td class="right strong">{{ money(m.amount) }}</td>
+            <td>{{ m.description || '—' }}</td>
+          </tr>
+        } @empty { <tr><td colspan="5" class="empty">No cash movements recorded for this session.</td></tr> }
+      </tbody>
+    </table></div></div>
+  }
+
+  @if (!loading() && type() === 'daily-closing') {
+    <section class="closing-action"><div><strong>Close business day</strong><p>Preview transactions, verify no open sessions remain, and close the business date.</p></div>
+      <form [formGroup]="dailyForm" (ngSubmit)="performClosing()" class="closing-form">
+        <input type="date" formControlName="businessDate" (change)="previewDailyClosing()">
+        <input formControlName="notes" maxlength="1000" placeholder="Closing notes (optional)">
+        <button class="secondary" type="button" (click)="previewDailyClosing()" [disabled]="previewLoading()">{{ previewLoading() ? 'Loading…' : 'Preview' }}</button>
+        @if (canPerformClosing) {
+          <button class="primary" type="submit" [disabled]="saving() || (dailyPreview() && !dailyPreview().canClose)">{{ saving() ? 'Closing…' : 'Perform closing' }}</button>
+        }
+      </form>
+    </section>
+
+    @if (dailyPreview(); as prev) {
+      <section class="table-card preview-card">
+        <div class="detail-lines">
+          <div><span>Sales ({{ prev.summary.salesCount }} invoices)</span><strong>{{ money(prev.summary.salesTotal) }} (Paid: {{ money(prev.summary.salesPaidTotal) }})</strong></div>
+          <div><span>Sales payment breakdown</span><strong>Cash {{ money(prev.summary.salesCashTotal) }} · UPI {{ money(prev.summary.salesUpiTotal) }} · Card {{ money(prev.summary.salesCardTotal) }} · Bank {{ money(prev.summary.salesBankTotal) }}</strong></div>
+          <div><span>Sales returns ({{ prev.summary.salesReturnCount }}) / Refunds</span><strong>{{ money(prev.summary.salesReturnTotal) }} / {{ money(prev.summary.salesRefundTotal) }}</strong></div>
+          <div><span>Purchases ({{ prev.summary.purchaseCount }})</span><strong>{{ money(prev.summary.purchaseTotal) }}</strong></div>
+          <div><span>Expenses ({{ prev.summary.expenseCount }})</span><strong>{{ money(prev.summary.expenseTotal) }}</strong></div>
+          <div><span>Cash reconciliation ({{ prev.summary.registerCount }} closed sessions)</span><strong>Expected {{ money(prev.summary.cashExpectedTotal) }} · Actual {{ money(prev.summary.cashActualTotal) }} · Diff {{ money(prev.summary.cashDifferenceTotal) }}</strong></div>
+        </div>
+        @if (prev.validationErrors?.length) {
+          @for (err of prev.validationErrors; track err) { <p class="field-error">{{ err }}</p> }
+        }
+      </section>
+    }
+
+    <div class="toolbar">
+      <input type="date" aria-label="Closing from date" [value]="closingFromDate()" (change)="closingFromDate.set($any($event.target).value); page.set(0); loadClosings()">
+      <input type="date" aria-label="Closing to date" [value]="closingToDate()" (change)="closingToDate.set($any($event.target).value); page.set(0); loadClosings()">
+      <button type="button" class="secondary" (click)="loadClosings()">Refresh</button>
+    </div>
+
+    <div class="table-card"><div class="table-scroll"><table><thead><tr><th>Business date</th><th>Closed at</th><th>Sales</th><th>Purchases</th><th>Expenses</th><th>Cash difference</th><th>Actions</th></tr></thead>
       <tbody>@for (c of rows(); track c.uuid) { <tr><td class="strong">{{ c.businessDate | date:'dd MMM yyyy' }}</td><td>{{ c.closedAt | date:'dd MMM yyyy, h:mm a' }}</td>
         <td>{{ money(c.summary?.salesTotal) }}</td><td>{{ money(c.summary?.purchaseTotal) }}</td><td>{{ money(c.summary?.expenseTotal) }}</td><td [class.warning-text]="hasCashDifference(c.summary?.cashDifferenceTotal)">{{ money(c.summary?.cashDifferenceTotal) }}</td>
-      </tr> } @empty { <tr><td colspan="6" class="empty">No daily closing records found.</td></tr> }</tbody></table></div>
+        <td><button class="link" (click)="exportClosingExcel(c)">Export Excel</button></td>
+      </tr> } @empty { <tr><td colspan="7" class="empty">No daily closing records found.</td></tr> }</tbody></table></div>
       <footer class="table-footer"><span>Page {{ page()+1 }} of {{ totalPages() || 1 }}</span><div><button class="secondary" [disabled]="page()===0" (click)="changePage(-1)">Previous</button><button class="secondary" [disabled]="page()+1>=totalPages()" (click)="changePage(1)">Next</button></div></footer>
     </div>
   }
@@ -103,8 +275,12 @@
   <app-stock-adjustment-dialog [vm]="this" [stock]="selected()" />
 }
 
+@if (showReconcile() && selected(); as recStock) {
+  <app-stock-reconciliation-dialog [vm]="this" [stock]="recStock" />
+}
+
 @if (selected(); as purchase) {
-  @if (type() === 'purchases' && !showAdjust()) {
+  @if (type() === 'purchases' && !showAdjust() && !showReconcile()) {
     <app-purchase-details-dialog [vm]="this" [purchase]="purchase" />
   }
 }

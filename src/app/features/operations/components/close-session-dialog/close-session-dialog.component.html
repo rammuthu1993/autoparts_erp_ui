@@ -1,8 +1,70 @@
 <div class="backdrop" (click)="$event.target === $event.currentTarget && vm.showCloseSession.set(false)">
-  <section class="modal" (click)="$event.stopPropagation()">
-    <header><div><h2>Close cash session</h2><p>{{ register.name }} · Count the physical cash before closing.</p></div><button class="close" (click)="vm.showCloseSession.set(false)">×</button></header>
+  <section class="modal wide" (click)="$event.stopPropagation()">
+    <header>
+      <div>
+        <h2>Close cash session &amp; reconcile</h2>
+        <p>{{ register.name }} · Count physical cash and explain any variance before closing.</p>
+      </div>
+      <button class="close" type="button" (click)="vm.showCloseSession.set(false)">×</button>
+    </header>
+    @if (vm.activeSessions()[register.uuid]; as session) {
+      <div class="detail-lines">
+        <div><span>Opening balance</span><strong>{{ vm.money(session.openingBalance) }}</strong></div>
+        <div><span>Total cash in</span><strong>{{ vm.money(session.totalCashIn) }}</strong></div>
+        <div><span>Total cash out</span><strong>{{ vm.money(session.totalCashOut) }}</strong></div>
+        <div><span>Expected closing cash</span><strong>{{ vm.money(session.expectedClosingBalance) }}</strong></div>
+      </div>
+    }
     <form [formGroup]="vm.closingForm" (ngSubmit)="vm.confirmCloseSession()" class="form-grid">
-      <label class="wide-field">Actual closing cash (₹) *<input type="number" min="0" step="0.01" formControlName="actualClosingBalance"></label>
-      <footer class="wide-field"><button type="button" class="secondary" (click)="vm.showCloseSession.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="vm.saving()">Confirm close</button></footer>
+      <label class="wide-field checkbox-inline">
+        <input type="checkbox" formControlName="useDenominations">
+        <span>Count using Indian currency denominations (₹500 – ₹10 &amp; Coins)</span>
+      </label>
+
+      @if (vm.closingForm.controls.useDenominations.value) {
+        <label>₹500 notes<input type="number" min="0" step="1" formControlName="denomination500"></label>
+        <label>₹200 notes<input type="number" min="0" step="1" formControlName="denomination200"></label>
+        <label>₹100 notes<input type="number" min="0" step="1" formControlName="denomination100"></label>
+        <label>₹50 notes<input type="number" min="0" step="1" formControlName="denomination50"></label>
+        <label>₹20 notes<input type="number" min="0" step="1" formControlName="denomination20"></label>
+        <label>₹10 notes<input type="number" min="0" step="1" formControlName="denomination10"></label>
+        <label class="wide-field">Coins amount (₹)<input type="number" min="0" step="0.01" formControlName="coinsAmount"></label>
+        <div class="wide-field detail-total">
+          <span>Calculated actual cash</span>
+          <strong>{{ vm.money(vm.closingDenominationTotal()) }}</strong>
+        </div>
+      } @else {
+        <label class="wide-field">Actual closing cash (₹) *
+          <input type="number" min="0" step="0.01" formControlName="actualClosingBalance">
+          @if (vm.closingForm.controls.actualClosingBalance.invalid && (vm.closingForm.controls.actualClosingBalance.dirty || vm.closingForm.controls.actualClosingBalance.touched)) {
+            <small class="field-error">Enter a valid non-negative closing balance.</small>
+          }
+        </label>
+      }
+
+      <div class="wide-field detail-total">
+        <span>Difference (Actual − Expected)</span>
+        <strong [class.warn]="vm.closingDifference() !== 0">
+          {{ vm.money(vm.closingDifference()) }}
+          @if (vm.closingDifference() > 0) { (Excess) }
+          @else if (vm.closingDifference() < 0) { (Shortage) }
+          @else { (Balanced) }
+        </strong>
+      </div>
+
+      <label class="wide-field">Difference explanation {{ vm.closingDifference() !== 0 ? '*' : '(optional)' }}
+        <textarea rows="2" maxlength="500" formControlName="differenceReason" placeholder="Explain shortage or excess if any"></textarea>
+        @if (vm.closingDifference() !== 0 && !vm.closingForm.controls.differenceReason.value?.trim()) {
+          <small class="field-error">Explanation is required when actual cash differs from expected cash.</small>
+        }
+      </label>
+
+      <footer class="wide-field">
+        <button type="button" class="secondary" (click)="vm.showCloseSession.set(false)">Cancel</button>
+        <button type="submit" class="primary" [disabled]="vm.saving() || (vm.closingDifference() !== 0 && !vm.closingForm.controls.differenceReason.value?.trim())">
+          {{ vm.saving() ? 'Closing…' : 'Confirm close' }}
+        </button>
+      </footer>
     </form>
-  </section></div>
+  </section>
+</div>

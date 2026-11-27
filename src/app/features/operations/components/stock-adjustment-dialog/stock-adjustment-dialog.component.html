@@ -1,6 +1,12 @@
 <div class="backdrop" (click)="$event.target === $event.currentTarget && vm.showAdjust.set(false)">
   <section class="modal" (click)="$event.stopPropagation()">
-    <header><div><h2>{{ stock ? 'Adjust stock' : 'Add stock' }}</h2><p>{{ stock ? (stock.productCode + ' · ' + stock.productName + ' · Current: ' + stock.quantity + ' ' + stock.unit) : 'Choose an existing product and enter the quantity to add.' }}</p></div><button type="button" class="close" (click)="vm.showAdjust.set(false)">×</button></header>
+    <header>
+      <div>
+        <h2>{{ stock ? 'Adjust stock' : 'Add / Adjust stock' }}</h2>
+        <p>{{ stock ? (stock.productCode + ' · ' + stock.productName + ' · Current: ' + stock.quantity + ' ' + stock.unit) : 'Choose an existing product and enter the quantity change.' }}</p>
+      </div>
+      <button type="button" class="close" (click)="vm.showAdjust.set(false)">×</button>
+    </header>
     <form [formGroup]="vm.adjustmentForm" (ngSubmit)="vm.adjustStock()" class="form-grid">
       @if (!stock) {
         <label class="wide-field">Product *
@@ -11,24 +17,40 @@
             }
           </select>
           @if (vm.stockOptionsLoading()) { <small>Loading products…</small> }
-          @if (!vm.stockOptionsLoading() && vm.stockOptions().length === 0) { <small class="field-error">No active products are available. Create the product in Products first.</small> }
+          @if (!vm.stockOptionsLoading() && vm.stockOptions().length === 0) { <small class="field-error">No active products are available.</small> }
         </label>
       }
       @if (vm.selected(); as selectedStock) {
-        <div class="wide-field"><small>Current available quantity: <strong>{{ selectedStock.quantity }} {{ selectedStock.unit }}</strong></small></div>
+        <div class="wide-field detail-lines">
+          <div><span>Current available quantity</span><strong>{{ selectedStock.quantity }} {{ selectedStock.unit }}</strong></div>
+          <div>
+            <span>New stock preview</span>
+            <strong [class.warn]="vm.adjustmentPreviewQty() < 0">{{ vm.adjustmentPreviewQty() }} {{ selectedStock.unit }}</strong>
+          </div>
+        </div>
       }
-      <label>Quantity change *<input type="number" step="0.001" formControlName="quantityChange" placeholder="Positive to add, negative to reduce">
-        <small>Enter a positive quantity to add stock. Use a negative quantity only to reduce stock.</small>
-        @if (vm.adjustmentForm.controls.quantityChange.touched && vm.adjustmentForm.controls.quantityChange.hasError('required')) { <small class="field-error">Quantity change is required.</small> }
-        @if (vm.adjustmentForm.controls.quantityChange.touched && vm.adjustmentForm.controls.quantityChange.value === 0) { <small class="field-error">Quantity change cannot be zero.</small> }
+      <label>Quantity change *
+        <input type="number" step="0.001" formControlName="quantityChange" placeholder="Positive to add, negative to reduce">
+        <small>Positive increases stock; negative reduces stock. Zero is invalid.</small>
+        @if ((vm.adjustmentForm.controls.quantityChange.dirty || vm.adjustmentForm.controls.quantityChange.touched) && vm.adjustmentForm.controls.quantityChange.hasError('required')) { <small class="field-error">Quantity change is required.</small> }
+        @if ((vm.adjustmentForm.controls.quantityChange.dirty || vm.adjustmentForm.controls.quantityChange.touched) && vm.adjustmentForm.controls.quantityChange.value === 0) { <small class="field-error">Quantity change cannot be zero.</small> }
+        @if (vm.selected() && vm.adjustmentPreviewQty() < 0) { <small class="field-error">Final stock cannot be negative.</small> }
       </label>
-      <label>Reason *<input formControlName="reason" maxlength="250">
-        @if (vm.adjustmentForm.controls.reason.touched && vm.adjustmentForm.controls.reason.hasError('required')) { <small class="field-error">Reason is required.</small> }
-        @if (vm.adjustmentForm.controls.reason.touched && vm.adjustmentForm.controls.reason.hasError('maxlength')) { <small class="field-error">Reason cannot exceed 250 characters.</small> }
+      <label>Reason *
+        <input formControlName="reason" maxlength="250" placeholder="e.g. Damaged part, Cycle count">
+        @if ((vm.adjustmentForm.controls.reason.dirty || vm.adjustmentForm.controls.reason.touched) && vm.adjustmentForm.controls.reason.hasError('required')) { <small class="field-error">Reason is required.</small> }
+        @if (vm.adjustmentForm.controls.reason.hasError('maxlength')) { <small class="field-error">Reason cannot exceed 250 characters.</small> }
       </label>
-      <label class="wide-field">Notes<textarea formControlName="notes" rows="3" maxlength="500"></textarea>
-        @if (vm.adjustmentForm.controls.notes.touched && vm.adjustmentForm.controls.notes.hasError('maxlength')) { <small class="field-error">Notes cannot exceed 500 characters.</small> }
+      <label class="wide-field">Notes
+        <textarea formControlName="notes" rows="3" maxlength="500"></textarea>
+        @if (vm.adjustmentForm.controls.notes.hasError('maxlength')) { <small class="field-error">Notes cannot exceed 500 characters.</small> }
       </label>
-      <footer class="wide-field"><button type="button" class="secondary" (click)="vm.showAdjust.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="vm.saving() || (!stock && !vm.selected()) || vm.stockOptionsLoading()">{{ vm.saving() ? 'Saving…' : 'Save adjustment' }}</button></footer>
+      <footer class="wide-field">
+        <button type="button" class="secondary" (click)="vm.showAdjust.set(false)">Cancel</button>
+        <button type="submit" class="primary" [disabled]="vm.saving() || (!stock && !vm.selected()) || vm.stockOptionsLoading() || vm.adjustmentForm.invalid || vm.adjustmentForm.controls.quantityChange.value === 0 || (vm.selected() && vm.adjustmentPreviewQty() < 0)">
+          {{ vm.saving() ? 'Saving…' : 'Save adjustment' }}
+        </button>
+      </footer>
     </form>
-  </section></div>
+  </section>
+</div>

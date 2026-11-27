@@ -21,6 +21,44 @@
         }
       }
     </article>
+    <article class="panel">
+      <div class="panel-head">
+        <h2>Sales return register</h2>
+        <div class="form-grid">
+          <input placeholder="Search return, invoice or customer" [ngModel]="salesReturnRegSearch()" (ngModelChange)="salesReturnRegSearch.set($event); salesReturnRegPage.set(0); loadSalesReturnsRegister()">
+          <select [ngModel]="salesReturnRegStatus()" (ngModelChange)="salesReturnRegStatus.set($event); salesReturnRegPage.set(0); loadSalesReturnsRegister()">
+            <option value="">All statuses</option>
+            <option value="ACCEPTED">Accepted</option>
+            <option value="PARTIALLY_REFUNDED">Partially refunded</option>
+            <option value="REFUNDED">Refunded</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Invoice</th><th>Reason</th><th>Total</th><th>Refunded</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            @for (sr of salesReturnsRegister(); track sr.uuid) {
+              <tr>
+                <td>{{ sr.returnDate | date:'dd MMM yyyy' }}</td>
+                <td>{{ sr.invoiceNumber }}</td>
+                <td>{{ sr.reason }}</td>
+                <td>{{ sr.totalReturnAmount | currency:'INR' }}</td>
+                <td>{{ sr.refundedAmount | currency:'INR' }}</td>
+                <td>{{ sr.status }}</td>
+                <td><button type="button" class="text-btn" (click)="showSalesReturn(sr.uuid)">View</button></td>
+              </tr>
+            } @empty { <tr><td colspan="7" class="empty">No sales returns found.</td></tr> }
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="secondary" [disabled]="salesReturnRegPage()===0" (click)="salesReturnRegPage.set(salesReturnRegPage()-1); loadSalesReturnsRegister()">Previous</button>
+        <span>Page {{ salesReturnRegPage()+1 }} of {{ salesReturnRegTotalPages() || 1 }}</span>
+        <button class="secondary" [disabled]="salesReturnRegPage()+1>=salesReturnRegTotalPages()" (click)="salesReturnRegPage.set(salesReturnRegPage()+1); loadSalesReturnsRegister()">Next</button>
+      </div>
+    </article>
+
     @if (selectedSale(); as sale) {
       @if (showSalesReturnModal()) {
         <app-sales-return-dialog [vm]="this" [sale]="sale" />
@@ -61,10 +99,10 @@
           </table>
         </div>
         <div class="form-grid">
-          <label>Return reason<input [ngModel]="returnReason()" (ngModelChange)="returnReason.set($event)" maxlength="500"></label>
+          <label>Return reason *<input [ngModel]="returnReason()" (ngModelChange)="returnReason.set($event)" maxlength="500"></label>
           <label>Notes<input [ngModel]="returnNotes()" (ngModelChange)="returnNotes.set($event)" maxlength="1000"></label>
         </div>
-        <button class="primary" [disabled]="saving() || !canCreatePurchaseReturn()" (click)="createPurchaseReturn()" data-tooltip="Create purchase return">＋ Create purchase return</button>
+        <button class="primary" [disabled]="saving() || !canCreatePurchaseReturn() || !returnReason().trim()" (click)="createPurchaseReturn()" data-tooltip="Create purchase return">＋ Create purchase return</button>
         <h3>Previous returns for selected purchase</h3>
         @for (r of purchaseReturns(); track r.uuid) {
           <button class="row-link" type="button" data-tooltip="View purchase return details" (click)="showPurchaseReturn(r.uuid)">◉ {{r.returnNumber}} · {{r.returnDate | date:'mediumDate'}} · {{r.totalReturnAmount | currency:'INR'}}</button>
@@ -72,24 +110,50 @@
       }
     </article>
 
-    @if (purchaseReturnDetail(); as r) {
-      <article class="panel">
-        <h2>Purchase return {{r.returnNumber}}</h2>
-        <p>{{r.purchaseNumber}} · {{r.returnDate | date:'mediumDate'}} · Supplier credit {{r.supplierCredit?.creditNoteNumber}}</p>
-        <div class="table-wrap"><table><thead><tr><th>Product</th><th>Code</th><th>Returned quantity</th><th>Purchase price</th><th>Line total</th></tr></thead><tbody>
-          @for (line of r.products ?? []; track line.uuid) { <tr><td>{{line.productName}}</td><td>{{line.productCode}}</td><td>{{line.quantity}}</td><td>{{line.purchasePrice | currency:'INR'}}</td><td>{{line.lineTotal | currency:'INR'}}</td> }
-        </tbody></table></div>
-        <p>Total {{r.totalReturnAmount | currency:'INR'}} · Supplier credit status {{r.supplierCredit?.creditNoteNumber}}</p>
-        <p>Available credit {{r.supplierCredit?.availableAmount | currency:'INR'}}</p>
+    <article class="panel">
+      <div class="panel-head">
+        <h2>Purchase return register</h2>
         <div class="form-grid">
-          <label>Refund method<select [ngModel]="refundForm().paymentMethod" (ngModelChange)="setRefund('paymentMethod', $event)">@for (m of paymentMethods; track m) { <option [value]="m">{{m}}</option> }</select></label>
-          <label>Refund amount<input type="number" min="0.01" [ngModel]="refundForm().amount" (ngModelChange)="setRefund('amount', +$event)"></label>
-          <label>Reference<input [ngModel]="refundForm().referenceNumber" (ngModelChange)="setRefund('referenceNumber', $event)"></label>
-          <label>Notes<input [ngModel]="refundForm().notes" (ngModelChange)="setRefund('notes', $event)"></label>
+          <input placeholder="Search return, purchase or supplier" [ngModel]="purchaseReturnRegSearch()" (ngModelChange)="purchaseReturnRegSearch.set($event); purchaseReturnRegPage.set(0); loadPurchaseReturnsRegister()">
+          <select [ngModel]="purchaseReturnRegCreditStatus()" (ngModelChange)="purchaseReturnRegCreditStatus.set($event); purchaseReturnRegPage.set(0); loadPurchaseReturnsRegister()">
+            <option value="">All credit statuses</option>
+            <option value="OPEN">Open</option>
+            <option value="PARTIALLY_USED">Partially used</option>
+            <option value="SETTLED">Settled</option>
+          </select>
         </div>
-        <button class="primary" [disabled]="saving()" (click)="recordSupplierRefund(r.supplierCredit)" data-tooltip="Record supplier refund">↗ Record supplier refund</button>
-        <button class="secondary" (click)="applySupplierCredit(r.supplierCredit)" data-tooltip="Apply supplier credit">⇄ Apply credit to another purchase</button>
-      </article>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Return no.</th><th>Date</th><th>Purchase</th><th>Reason</th><th>Total</th><th>Credit remaining</th><th></th></tr></thead>
+          <tbody>
+            @for (pr of purchaseReturnsRegister(); track pr.uuid) {
+              <tr>
+                <td>{{ pr.returnNumber }}</td>
+                <td>{{ pr.returnDate | date:'dd MMM yyyy' }}</td>
+                <td>{{ pr.purchaseNumber }}</td>
+                <td>{{ pr.reason }}</td>
+                <td>{{ pr.totalReturnAmount | currency:'INR' }}</td>
+                <td>{{ pr.supplierCredit?.remainingAmount | currency:'INR' }}</td>
+                <td><button type="button" class="text-btn" (click)="showPurchaseReturn(pr.uuid)">View</button></td>
+              </tr>
+            } @empty { <tr><td colspan="7" class="empty">No purchase returns found.</td></tr> }
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="secondary" [disabled]="purchaseReturnRegPage()===0" (click)="purchaseReturnRegPage.set(purchaseReturnRegPage()-1); loadPurchaseReturnsRegister()">Previous</button>
+        <span>Page {{ purchaseReturnRegPage()+1 }} of {{ purchaseReturnRegTotalPages() || 1 }}</span>
+        <button class="secondary" [disabled]="purchaseReturnRegPage()+1>=purchaseReturnRegTotalPages()" (click)="purchaseReturnRegPage.set(purchaseReturnRegPage()+1); loadPurchaseReturnsRegister()">Next</button>
+      </div>
+    </article>
+
+    @if (purchaseReturnDetail(); as r) {
+      <app-purchase-return-detail-dialog [vm]="this" [r]="r" />
+    }
+
+    @if (activeCreditForApplication(); as credit) {
+      <app-supplier-credit-dialog [vm]="this" [credit]="credit" />
     }
   }
 

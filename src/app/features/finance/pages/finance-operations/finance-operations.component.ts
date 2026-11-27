@@ -1,11 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { SalesReturnDetailDialogComponent } from '../../components/sales-return-detail-dialog/sales-return-detail-dialog.component';
 import { SalesReturnDialogComponent } from '../../components/sales-return-dialog/sales-return-dialog.component';
+import { PurchaseReturnDetailDialogComponent } from '../../components/purchase-return-detail-dialog/purchase-return-detail-dialog.component';
+import { SupplierCreditDialogComponent } from '../../components/supplier-credit-dialog/supplier-credit-dialog.component';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { catchError, finalize, of } from 'rxjs';
 import * as XLSX from 'xlsx';
 import { API_BASE_URL } from '../../../../core/http/api/api-config';
 import { AuthStateService } from '../../../../core/auth/services/auth-state.service';
@@ -15,7 +17,7 @@ type Section = 'sales-returns' | 'purchase-returns' | 'expenses' | 'ledgers';
 @Component({
   selector: 'app-finance-operations',
   standalone: true,
-  imports: [CommonModule, FormsModule, SalesReturnDetailDialogComponent, SalesReturnDialogComponent],
+  imports: [CommonModule, FormsModule, SalesReturnDetailDialogComponent, SalesReturnDialogComponent, PurchaseReturnDetailDialogComponent, SupplierCreditDialogComponent],
   templateUrl: './finance-operations.component.html',
   styleUrl: './finance-operations.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -29,6 +31,12 @@ export class FinanceOperationsComponent {
   readonly expenses=signal<any[]>([]); readonly categories=signal<any[]>([]); readonly expenseLedger=signal<any>(null); readonly ledgerData=signal<any>(null);
   readonly page=signal(0); readonly totalPages=signal(0); readonly search=signal(''); readonly fromDate=signal(this.monthStart()); readonly toDate=signal(this.today());
   readonly returnReason=signal(''); readonly returnNotes=signal(''); readonly returnLines=signal<Record<string,number>>({});
+  readonly returnDispositions=signal<Record<string,'RESTOCK'|'QUARANTINE'|'SCRAP'>>({});
+  readonly returnConditions=signal<Record<string,string>>({});
+  readonly myActiveCashSession=signal<any>(null);
+  readonly salesReturnsRegister=signal<any[]>([]); readonly salesReturnRegSearch=signal(''); readonly salesReturnRegStatus=signal(''); readonly salesReturnRegPage=signal(0); readonly salesReturnRegTotalPages=signal(0);
+  readonly purchaseReturnsRegister=signal<any[]>([]); readonly purchaseReturnRegSearch=signal(''); readonly purchaseReturnRegCreditStatus=signal(''); readonly purchaseReturnRegPage=signal(0); readonly purchaseReturnRegTotalPages=signal(0);
+  readonly activeCreditForApplication=signal<any>(null); readonly eligibleCreditPurchases=signal<any[]>([]); readonly creditPurchaseSearch=signal(''); readonly creditTargetPurchaseUuid=signal(''); readonly creditApplyAmount=signal(0);
   readonly refundForm=signal({paymentMethod:'CASH',amount:0,referenceNumber:'',notes:''});
   readonly expenseForm=signal({categoryUuid:'',expenseDate:this.today(),title:'',description:'',amount:0,paymentMethod:'CASH',referenceNumber:'',notes:''});
   readonly ledgerType=signal<'expense'|'purchase'|'customer'|'supplier'|'sales'>('expense');
@@ -41,7 +49,20 @@ export class FinanceOperationsComponent {
   readonly canCreateSalesReturn=()=>this.auth.hasPermission('SALES_RETURNS.CREATE');
   readonly canCreatePurchaseReturn=()=>this.auth.hasPermission('PURCHASE_RETURNS.CREATE');
 
-  constructor(){const initial=this.route.snapshot.data['financeSection'] as Section|undefined;if(initial)this.section.set(initial);this.loadSales();this.loadPurchases();this.loadExpenses();this.loadCategories();this.loadLedgerParties();}
+  constructor(){const initial=this.route.snapshot.data['financeSection'] as Section|undefined;if(initial)this.section.set(initial);this.loadMyActiveCashSession();this.loadSales();this.loadPurchases();this.loadSalesReturnsRegister();this.loadPurchaseReturnsRegister();this.loadExpenses();this.loadCategories();this.loadLedgerParties();}
+  loadMyActiveCashSession():void{this.http.get<any>(`${API_BASE_URL}/api/v1/cash-registers/sessions/active/me`,{observe:'response'}).pipe(catchError(()=>of(null))).subscribe(res=>this.myActiveCashSession.set(res&&res.status===200?res.body:null));}
+  loadSalesReturnsRegister():void{
+    let params=new HttpParams().set('page',String(this.salesReturnRegPage())).set('size','20');
+    if(this.salesReturnRegSearch().trim()) params=params.set('search',this.salesReturnRegSearch().trim());
+    if(this.salesReturnRegStatus()) params=params.set('status',this.salesReturnRegStatus());
+    this.http.get<any>(`${API_BASE_URL}/api/v1/sales/returns/paged`,{params}).pipe(catchError(()=>of({content:[],totalPages:0}))).subscribe(r=>{this.salesReturnsRegister.set(r.content??[]);this.salesReturnRegTotalPages.set(r.totalPages??0);});
+  }
+  loadPurchaseReturnsRegister():void{
+    let params=new HttpParams().set('page',String(this.purchaseReturnRegPage())).set('size','20');
+    if(this.purchaseReturnRegSearch().trim()) params=params.set('search',this.purchaseReturnRegSearch().trim());
+    if(this.purchaseReturnRegCreditStatus()) params=params.set('creditStatus',this.purchaseReturnRegCreditStatus());
+    this.http.get<any>(`${API_BASE_URL}/api/v1/purchase-returns/paged`,{params}).pipe(catchError(()=>of({content:[],totalPages:0}))).subscribe(r=>{this.purchaseReturnsRegister.set(r.content??[]);this.purchaseReturnRegTotalPages.set(r.totalPages??0);});
+  }
   private today():string {const d=new Date();return this.date(d);}
   private monthStart():string {const d=new Date();return this.date(new Date(d.getFullYear(),d.getMonth(),1));}
   private date(d:Date):string{return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
@@ -85,23 +106,59 @@ export class FinanceOperationsComponent {
   }
   showPurchaseReturn(uuid:string):void{this.http.get<any>(`${API_BASE_URL}/api/v1/purchase-returns/${uuid}`).subscribe({next:r=>this.purchaseReturnDetail.set(r),error:e=>this.toast.error(e?.error?.message||'Unable to load purchase return.')});}
   setReturnQty(key:string,value:number):void{this.returnLines.update(x=>({...x,[key]:Math.max(0,Number(value)||0)}));}
+  setReturnDisposition(key:string,value:'RESTOCK'|'QUARANTINE'|'SCRAP'):void{this.returnDispositions.update(x=>({...x,[key]:value}));}
+  setReturnCondition(key:string,value:string):void{this.returnConditions.update(x=>({...x,[key]:value}));}
+  estimatedSalesReturnTotal():number{
+    const s=this.selectedSale(); if(!s) return 0;
+    let total=0;
+    for(const p of s.products??[]){
+      const qty=Number(this.returnLines()[p.uuid]??0);
+      if(qty>0 && Number(p.quantity)>0){
+        total += (Number(p.lineTotal)/Number(p.quantity))*qty;
+      }
+    }
+    return Math.round((total+Number.EPSILON)*100)/100;
+  }
+  hasInvalidSalesReturnQty():boolean{
+    const s=this.selectedSale(); if(!s) return false;
+    return (s.products??[]).some((p:any)=>Number(this.returnLines()[p.uuid]??0)>this.remainingSalesQty(p));
+  }
   createSalesReturn():void{
-    const s=this.selectedSale(),products=(s?.products??[]).filter((p:any)=>Number(this.returnLines()[p.uuid]??0)>0).map((p:any)=>({salesProductUuid:p.uuid,quantity:Number(this.returnLines()[p.uuid])}));
+    const s=this.selectedSale(),products=(s?.products??[]).filter((p:any)=>Number(this.returnLines()[p.uuid]??0)>0).map((p:any)=>({
+      salesProductUuid:p.uuid,
+      quantity:Number(this.returnLines()[p.uuid]),
+      disposition:this.returnDispositions()[p.uuid]||'RESTOCK',
+      conditionNotes:this.returnConditions()[p.uuid]?.trim()||undefined
+    }));
     if(!s||!this.returnReason().trim()||!products.length){this.toast.warning('Select a sale, enter a return reason and at least one return quantity.');return;}
-    this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/sales/${s.uuid}/returns`,{reason:this.returnReason(),notes:this.returnNotes(),products}).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.toast.success('Sales return created.');this.salesReturnDetail.set(r);this.loadSalesReturns(s.uuid);this.selectSale(s.uuid,false);},error:e=>this.toast.error(e?.error?.message||'Unable to create sales return.')});
+    this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/sales/${s.uuid}/returns`,{reason:this.returnReason().trim(),notes:this.returnNotes().trim()||undefined,products}).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.toast.success('Sales return created.');this.salesReturnDetail.set(r);this.showSalesReturnModal.set(false);this.loadSalesReturns(s.uuid);this.loadSalesReturnsRegister();this.selectSale(s.uuid,false);},error:e=>this.toast.error(e?.error?.message||'Unable to create sales return.')});
   }
   showSalesReturn(uuid:string):void{this.http.get<any>(`${API_BASE_URL}/api/v1/sales/returns/${uuid}`).subscribe({next:r=>this.salesReturnDetail.set(r),error:e=>this.toast.error(e?.error?.message||'Unable to load return.')});}
-  recordSalesRefund(r:any):void{const f=this.refundForm();if(f.amount<=0){this.toast.warning('Enter a valid refund amount.');return;}this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/sales/returns/${r.uuid}/refund`,f).pipe(finalize(()=>this.saving.set(false))).subscribe({next:x=>{this.salesReturnDetail.set(x);this.toast.success('Sales refund recorded.');this.loadSalesReturns(r.saleUuid);},error:e=>this.toast.error(e?.error?.message||'Unable to record refund.')});}
+  recordSalesRefund(r:any):void{const f=this.refundForm();if(f.amount<=0){this.toast.warning('Enter a valid refund amount.');return;}this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/sales/returns/${r.uuid}/refund`,f).pipe(finalize(()=>this.saving.set(false))).subscribe({next:x=>{this.salesReturnDetail.set(x);this.toast.success('Sales refund recorded.');this.loadSalesReturns(r.saleUuid);this.loadSalesReturnsRegister();this.loadMyActiveCashSession();},error:e=>this.toast.error(e?.error?.message||'Unable to record refund.')});}
   closeSalesReturnModal():void{this.showSalesReturnModal.set(false);}
   closeSalesReturnDetail():void{this.salesReturnDetail.set(null);}
+  closePurchaseReturnDetail():void{this.purchaseReturnDetail.set(null);}
   selectPurchase(uuid:string):void{if(!uuid){this.selectedPurchase.set(null);return;}this.loading.set(true);this.http.get<any>(`${API_BASE_URL}/api/v1/purchases/${uuid}`).pipe(finalize(()=>this.loading.set(false))).subscribe({next:p=>{this.selectedPurchase.set(p);this.returnLines.set({});this.returnReason.set('');this.returnNotes.set('');this.loadPurchaseReturns(uuid);},error:e=>this.toast.error(e?.error?.message||'Unable to load purchase details.')});}
   createPurchaseReturn():void{
     const p=this.selectedPurchase(),products=(p?.products??[]).filter((x:any)=>Number(this.returnLines()[x.uuid]??0)>0).map((x:any)=>({purchaseProductUuid:x.uuid,quantity:Number(this.returnLines()[x.uuid])}));
     if(!p||!this.returnReason().trim()||!products.length){this.toast.warning('Select a purchase, enter a reason and at least one return quantity.');return;}
-    this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/purchases/${p.uuid}/returns`,{reason:this.returnReason(),notes:this.returnNotes(),products}).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.purchaseReturnDetail.set(r);this.toast.success('Purchase return created and supplier credit generated.');this.loadPurchaseReturns(p.uuid);this.selectPurchase(p.uuid);},error:e=>this.toast.error(e?.error?.message||'Unable to create purchase return.')});
+    this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/purchases/${p.uuid}/returns`,{reason:this.returnReason().trim(),notes:this.returnNotes().trim()||undefined,products}).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.purchaseReturnDetail.set(r);this.toast.success('Purchase return created and supplier credit generated.');this.loadPurchaseReturns(p.uuid);this.loadPurchaseReturnsRegister();this.selectPurchase(p.uuid);},error:e=>this.toast.error(e?.error?.message||'Unable to create purchase return.')});
   }
-  recordSupplierRefund(credit:any):void{const f=this.refundForm();if(f.amount<=0){this.toast.warning('Enter a valid refund amount.');return;}this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/supplier-credits/${credit.uuid}/refunds`,f).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.purchaseReturnDetail.update(x=>({...x,supplierCredit:r}));this.toast.success('Supplier refund recorded.');},error:e=>this.toast.error(e?.error?.message||'Unable to record supplier refund.')});}
-  applySupplierCredit(credit:any):void{const purchaseUuid=prompt('Enter the target purchase UUID');const amount=Number(prompt('Enter credit amount to apply'));if(!purchaseUuid||!Number.isFinite(amount)||amount<=0)return;this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/supplier-credits/${credit.uuid}/applications`,{purchaseUuid,amount}).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.purchaseReturnDetail.update(x=>({...x,supplierCredit:r}));this.toast.success('Supplier credit applied.');},error:e=>this.toast.error(e?.error?.message||'Unable to apply supplier credit.')});}
+  recordSupplierRefund(credit:any):void{const f=this.refundForm();if(f.amount<=0){this.toast.warning('Enter a valid refund amount.');return;}this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/supplier-credits/${credit.uuid}/refunds`,f).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.purchaseReturnDetail.update(x=>({...x,supplierCredit:r}));this.toast.success('Supplier refund recorded.');this.loadPurchaseReturnsRegister();this.loadMyActiveCashSession();},error:e=>this.toast.error(e?.error?.message||'Unable to record supplier refund.')});}
+  openCreditApplicationModal(credit:any):void{this.activeCreditForApplication.set(credit);this.creditPurchaseSearch.set('');this.creditTargetPurchaseUuid.set('');this.creditApplyAmount.set(Number(credit.remainingAmount??0));this.loadEligiblePurchasesForCredit(credit);}
+  closeCreditApplicationModal():void{this.activeCreditForApplication.set(null);}
+  loadEligiblePurchasesForCredit(_credit:any):void{
+    let params=new HttpParams().set('page','0').set('size','50').set('status','RECEIVED').set('onlyOutstanding','true');
+    if(this.creditPurchaseSearch().trim()) params=params.set('search',this.creditPurchaseSearch().trim());
+    this.http.get<any>(`${API_BASE_URL}/api/v1/purchases/paged`,{params}).pipe(catchError(()=>of({content:[]}))).subscribe(r=>this.eligibleCreditPurchases.set(r.content??[]));
+  }
+  remainingCreditAfterApplication(rem:number):number{return Math.max(0,Math.round(((Number(rem||0)-Number(this.creditApplyAmount()||0))+Number.EPSILON)*100)/100);}
+  submitApplySupplierCredit(credit:any):void{
+    const purchaseUuid=this.creditTargetPurchaseUuid(),amount=Number(this.creditApplyAmount());
+    if(!purchaseUuid||!Number.isFinite(amount)||amount<=0)return;
+    this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/supplier-credits/${credit.uuid}/applications`,{purchaseUuid,amount}).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.purchaseReturnDetail.update(x=>x?{...x,supplierCredit:r}:x);this.activeCreditForApplication.set(null);this.toast.success('Supplier credit applied.');this.loadPurchaseReturnsRegister();},error:e=>this.toast.error(e?.error?.message||'Unable to apply supplier credit.')});
+  }
+  applySupplierCredit(credit:any):void{this.openCreditApplicationModal(credit);}
   loadCategories():void{this.http.get<any>(`${API_BASE_URL}/api/v1/expense-categories/paged`,{params:{page:0,size:100,sortBy:'name',sortDir:'asc'}}).subscribe({next:r=>this.categories.set((r.content??[]).filter((x:any)=>x.active)),error:()=>this.toast.error('Unable to load expense categories.')});}
   loadExpenses():void{this.loading.set(true);this.http.get<any>(`${API_BASE_URL}/api/v1/expenses/paged`,{params:{page:this.page(),size:20,search:this.search(),sortBy:'id',sortDir:'desc'}}).pipe(finalize(()=>this.loading.set(false))).subscribe({next:r=>{this.expenses.set(r.content??[]);this.totalPages.set(r.totalPages??0);},error:e=>this.toast.error(e?.error?.message||'Unable to load expenses.')});}
   saveExpense():void{const f=this.expenseForm();if(!f.categoryUuid||!f.title.trim()||f.amount<=0){this.toast.warning('Category, title and a positive amount are required.');return;}this.saving.set(true);this.http.post(`${API_BASE_URL}/api/v1/expenses`,f).pipe(finalize(()=>this.saving.set(false))).subscribe({next:()=>{this.toast.success('Expense recorded.');this.expenseForm.set({categoryUuid:'',expenseDate:this.today(),title:'',description:'',amount:0,paymentMethod:'CASH',referenceNumber:'',notes:''});this.loadExpenses();},error:e=>this.toast.error(e?.error?.message||'Unable to create expense.')});}

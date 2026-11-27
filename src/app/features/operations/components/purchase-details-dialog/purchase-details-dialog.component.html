@@ -1,15 +1,93 @@
 <div class="backdrop" (click)="$event.target === $event.currentTarget && vm.selected.set(null)">
-  <section class="modal" (click)="$event.stopPropagation()">
-      <header><div><h2>{{ purchase.purchaseNumber }}</h2><p>{{ purchase.supplierName }} · {{ purchase.supplierInvoiceNo }}</p></div><button class="close" (click)="vm.selected.set(null)">×</button></header>
-      @if(purchase.products; as lines) { <div class="detail-lines">@for(line of lines; track line.uuid) { <div><span>{{ line.productName }} × {{ line.quantity }}</span><strong>{{ vm.money(line.lineTotal) }}</strong></div> }</div> }
-      <div class="detail-total"><span>Grand total</span><strong>{{ vm.money(purchase.grandTotal) }}</strong></div>
-      @if(vm.canRecordPurchasePayment && purchase.status === 'RECEIVED') {
+  <section class="modal wide" (click)="$event.stopPropagation()">
+    <header>
+      <div>
+        <h2>{{ purchase.purchaseNumber }} · {{ purchase.status }}</h2>
+        <p>{{ purchase.supplierName }} · Invoice {{ purchase.supplierInvoiceNo }} · {{ purchase.purchaseDate }}</p>
+      </div>
+      <button class="close" type="button" (click)="vm.selected.set(null)">×</button>
+    </header>
+    @if(purchase.products; as lines) {
+      <div class="detail-lines">
+        @for(line of lines; track line.uuid) {
+          <div>
+            <span>{{ line.productCode }} · {{ line.productName }} × {{ line.quantity }} (GST {{ line.taxPercent }}%)</span>
+            <strong>{{ vm.money(line.lineTotal) }}</strong>
+          </div>
+        }
+      </div>
+    }
+    <div class="detail-total"><span>Grand total</span><strong>{{ vm.money(purchase.grandTotal) }}</strong></div>
+
+    @if (purchase.status === 'DRAFT') {
+      <div class="detail-lines">
+        <div>
+          <span>Draft actions</span>
+          <span class="action-row">
+            @if (vm.canCreatePurchase) {
+              <button type="button" class="secondary" (click)="vm.editPurchaseDraft(purchase)">Edit draft</button>
+            }
+            @if (vm.canReceivePurchase) {
+              <button type="button" class="primary" [disabled]="vm.saving()" (click)="vm.receivePurchase(purchase)">Receive into inventory</button>
+            }
+            @if (vm.canCancelPurchase) {
+              <button type="button" class="secondary warn" [disabled]="vm.saving()" (click)="vm.cancelPurchaseDraft(purchase)">Cancel draft</button>
+            }
+          </span>
+        </div>
+      </div>
+    }
+
+    @if (purchase.status === 'RECEIVED') {
+      @if (vm.purchasePaymentSummary(); as psum) {
+        <div class="detail-lines">
+          <div><span>Paid amount</span><strong>{{ vm.money(psum.paidAmount) }}</strong></div>
+          <div><span>Credit applied</span><strong>{{ vm.money(psum.creditAppliedAmount ?? 0) }}</strong></div>
+          <div><span>Outstanding balance</span><strong [class.warn]="psum.balanceAmount > 0">{{ vm.money(psum.balanceAmount) }} ({{ psum.paymentStatus }})</strong></div>
+        </div>
+        @if (psum.payments?.length) {
+          <div class="detail-lines">
+            @for (pay of psum.payments; track pay.uuid) {
+              <div>
+                <span>{{ pay.paymentMethod }} · {{ pay.paymentDate | date:'dd MMM yyyy, hh:mm a' }}@if (pay.referenceNumber) { · Ref: {{ pay.referenceNumber }} }</span>
+                <strong>{{ vm.money(pay.amount) }}</strong>
+              </div>
+            }
+          </div>
+        }
+      }
+
+      @if(vm.canRecordPurchasePayment && (!vm.purchasePaymentSummary() || vm.purchasePaymentSummary()!.balanceAmount > 0)) {
+        @if (vm.paymentForm.controls.paymentMethod.value === 'CASH' && !vm.myActiveCashSession()) {
+          <p class="field-error">No active cash register session is open for your user. Open a cash session before recording a CASH payment.</p>
+        }
         <form [formGroup]="vm.paymentForm" (ngSubmit)="vm.recordPurchasePayment()" class="form-grid payment-form">
-          <label>Payment method<select formControlName="paymentMethod"><option>CASH</option><option>UPI</option><option>CARD</option><option>BANK</option></select></label>
-          <label>Amount *<input type="number" min="0.01" step="0.01" formControlName="amount"></label>
-          <label class="wide-field">Reference<input formControlName="referenceNumber"></label>
-          <label class="wide-field">Notes<input formControlName="notes"></label>
-          <footer class="wide-field"><button class="primary" type="submit" [disabled]="vm.saving()">Record supplier payment</button></footer>
+          <label>Payment method
+            <select formControlName="paymentMethod">
+              <option>CASH</option>
+              <option>UPI</option>
+              <option>CARD</option>
+              <option>BANK</option>
+            </select>
+          </label>
+          <label>Amount *
+            <input type="number" min="0.01" step="0.01" formControlName="amount">
+            @if ((vm.paymentForm.controls.amount.dirty || vm.paymentForm.controls.amount.touched) && vm.paymentForm.controls.amount.invalid) {
+              <small class="field-error">Enter a positive payment amount.</small>
+            }
+            @if (vm.purchasePaymentSummary() && (vm.paymentForm.controls.amount.value ?? 0) > vm.purchasePaymentSummary()!.balanceAmount) {
+              <small class="field-error">Payment cannot exceed outstanding balance ({{ vm.money(vm.purchasePaymentSummary()!.balanceAmount) }}).</small>
+            }
+          </label>
+          <label class="wide-field">Reference<input formControlName="referenceNumber" maxlength="100"></label>
+          <label class="wide-field">Notes<input formControlName="notes" maxlength="500"></label>
+          <footer class="wide-field">
+            <button class="primary" type="submit" [disabled]="vm.saving() || vm.paymentForm.invalid || (vm.paymentForm.controls.paymentMethod.value === 'CASH' && !vm.myActiveCashSession()) || (vm.purchasePaymentSummary() && (vm.paymentForm.controls.amount.value ?? 0) > vm.purchasePaymentSummary()!.balanceAmount)">
+              {{ vm.saving() ? 'Saving…' : 'Record supplier payment' }}
+            </button>
+          </footer>
         </form>
       }
-    </section></div>
+    }
+  </section>
+</div>

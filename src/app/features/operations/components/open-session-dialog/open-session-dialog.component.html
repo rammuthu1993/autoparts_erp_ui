@@ -1,8 +1,29 @@
 <div class="backdrop" (click)="$event.target === $event.currentTarget && vm.showOpenSession.set(false)">
   <section class="modal" (click)="$event.stopPropagation()">
-    <header><div><h2>Open cash session</h2><p>{{ register.registerCode }} · {{ register.name }}</p></div><button class="close" (click)="vm.showOpenSession.set(false)">×</button></header>
+    <header>
+      <div>
+        <h2>Open cash session</h2>
+        <p>{{ register.registerCode }} · {{ register.name }}</p>
+      </div>
+      <button class="close" type="button" (click)="vm.showOpenSession.set(false)">×</button>
+    </header>
     <form [formGroup]="vm.openingForm" (ngSubmit)="vm.confirmOpenSession()" class="form-grid">
-      <label class="wide-field">Opening cash balance (₹) *<input type="number" min="0" step="0.01" formControlName="openingBalance"></label>
-      <footer class="wide-field"><button type="button" class="secondary" (click)="vm.showOpenSession.set(false)">Cancel</button><button type="submit" class="primary" [disabled]="vm.saving()">Open session</button></footer>
+      <label class="wide-field">Opening cash balance (₹) *
+        <input type="number" min="0" step="0.01" formControlName="openingBalance">
+        @if (vm.openingForm.controls.openingBalance.invalid && (vm.openingForm.controls.openingBalance.dirty || vm.openingForm.controls.openingBalance.touched)) {
+          <small class="field-error">Enter a valid non-negative opening balance.</small>
+        }
+      </label>
+      <label class="wide-field">Opening notes
+        <textarea rows="2" maxlength="500" formControlName="openingNotes" placeholder="Optional shift handover notes"></textarea>
+        @if (vm.openingForm.controls.openingNotes.hasError('maxlength')) {
+          <small class="field-error">Opening notes cannot exceed 500 characters.</small>
+        }
+      </label>
+      <footer class="wide-field">
+        <button type="button" class="secondary" (click)="vm.showOpenSession.set(false)">Cancel</button>
+        <button type="submit" class="primary" [disabled]="vm.saving() || vm.openingForm.invalid">{{ vm.saving() ? 'Opening…' : 'Open session' }}</button>
+      </footer>
     </form>
-  </section></div>
+  </section>
+</div>

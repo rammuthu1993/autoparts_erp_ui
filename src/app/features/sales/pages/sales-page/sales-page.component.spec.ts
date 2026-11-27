@@ -85,6 +85,8 @@ describe('SalesPageComponent - Full Invoice Cancellation', () => {
     paymentStatusOptions: vi.fn().mockReturnValue(of([{ code: 'PARTIALLY_PAID', label: 'Partially Paid', sortOrder: 20 }])),
     products: vi.fn().mockReturnValue(of({ content: [], page: 0, size: 200, totalElements: 0, totalPages: 0, first: true, last: true })),
     customers: vi.fn().mockReturnValue(of({ content: [], page: 0, size: 200, totalElements: 0, totalPages: 0, first: true, last: true })),
+    stock: vi.fn().mockReturnValue(of({ content: [], page: 0, size: 200, totalElements: 0, totalPages: 0, first: true, last: true })),
+    returns: vi.fn().mockReturnValue(of([])),
     get: vi.fn().mockReturnValue(of(issuedSale)),
     cancellationPreview: vi.fn().mockReturnValue(of(previewResponse)),
     cancel: vi.fn().mockReturnValue(of({ ...issuedSale, status: 'CANCELLED', balanceAmount: 0, paymentStatus: null, cancellationReason: 'Wrong part' })),

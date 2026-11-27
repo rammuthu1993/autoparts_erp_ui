@@ -1,0 +1,41 @@
+<div class="backdrop" (click)="$event.target === $event.currentTarget && vm.showReconcile.set(false)">
+  <section class="modal" (click)="$event.stopPropagation()">
+    <header>
+      <div>
+        <h2>Physical stock reconciliation</h2>
+        <p>{{ stock.productCode }} · {{ stock.productName }}</p>
+      </div>
+      <button type="button" class="close" (click)="vm.showReconcile.set(false)">×</button>
+    </header>
+    <div class="detail-lines">
+      <div><span>System quantity</span><strong>{{ stock.quantity }} {{ stock.unit }}</strong></div>
+      <div>
+        <span>Discrepancy (Physical − System)</span>
+        <strong [class.warn]="vm.reconcileDifference() !== 0">{{ vm.reconcileDifference() }} {{ stock.unit }}</strong>
+      </div>
+    </div>
+    <form [formGroup]="vm.reconcileForm" (ngSubmit)="vm.submitReconcile()" class="form-grid">
+      <label>Physical counted quantity *
+        <input type="number" min="0" step="0.001" formControlName="physicalQuantity">
+        @if ((vm.reconcileForm.controls.physicalQuantity.dirty || vm.reconcileForm.controls.physicalQuantity.touched) && vm.reconcileForm.controls.physicalQuantity.invalid) {
+          <small class="field-error">Enter a valid non-negative physical count.</small>
+        }
+      </label>
+      <label>Reconciliation reason *
+        <input formControlName="reason" maxlength="250" placeholder="e.g. Monthly cycle count">
+        @if ((vm.reconcileForm.controls.reason.dirty || vm.reconcileForm.controls.reason.touched) && vm.reconcileForm.controls.reason.invalid) {
+          <small class="field-error">Reason is required (max 250 characters).</small>
+        }
+      </label>
+      <label class="wide-field">Notes
+        <textarea rows="2" maxlength="500" formControlName="notes"></textarea>
+      </label>
+      <footer class="wide-field">
+        <button type="button" class="secondary" (click)="vm.showReconcile.set(false)">Cancel</button>
+        <button type="submit" class="primary" [disabled]="vm.saving() || vm.reconcileForm.invalid || vm.reconcileDifference() === 0">
+          {{ vm.saving() ? 'Reconciling…' : 'Confirm reconciliation' }}
+        </button>
+      </footer>
+    </form>
+  </section>
+</div>
