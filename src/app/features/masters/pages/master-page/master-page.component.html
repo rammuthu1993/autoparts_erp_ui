@@ -27,6 +27,7 @@
             @for (column of config().columns; track column.key) {
               <th>{{ column.label }}</th>
             }
+            @if (config().type === 'products') { <th>Available qty</th> }
             @if (config().type === 'products' || canUpdate() || canDeactivate()) { <th class="actions-heading">Actions</th> }
           </tr>
         </thead>
@@ -43,6 +44,9 @@
                     </span>
                   }
                 </td>
+              }
+              @if (config().type === 'products') {
+                <td><strong>{{ availableStock(row) }}</strong></td>
               }
               @if (config().type === 'products' || canUpdate() || canDeactivate()) {
                 <td class="row-actions">
@@ -63,7 +67,7 @@
             </tr>
           } @empty {
             <tr>
-              <td class="empty-cell" [attr.colspan]="config().columns.length + (config().type === 'products' || canUpdate() || canDeactivate() ? 1 : 0)">
+              <td class="empty-cell" [attr.colspan]="config().columns.length + (config().type === 'products' ? 1 : 0) + (config().type === 'products' || canUpdate() || canDeactivate() ? 1 : 0)">
                 <div class="empty-state">
                   <span class="empty-icon">▤</span>
                   <strong>No {{ config().title.toLowerCase() }} found</strong>

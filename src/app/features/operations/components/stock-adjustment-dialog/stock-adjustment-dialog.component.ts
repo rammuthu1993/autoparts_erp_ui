@@ -17,5 +17,5 @@ import type { OperationsPageComponent } from '../../pages/operations-page/operat
 })
 export class StockAdjustmentDialogComponent {
   @Input({ required: true }) vm!: OperationsPageComponent;
-  @Input({ required: true }) stock!: any;
+  @Input() stock: any | null = null;
 }

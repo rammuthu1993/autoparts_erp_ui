@@ -15,6 +15,7 @@
         <div><span>Selling price</span><strong>{{ product['sellingPrice'] ?? '—' }}</strong></div>
         <div><span>GST rate</span><strong>{{ product['gstRate'] ?? '—' }}</strong></div>
         <div><span>HSN code</span><strong>{{ product['hsnCode'] || '—' }}</strong></div>
+        <div><span>Available quantity</span><strong>{{ product['quantity'] === null || product['quantity'] === undefined ? 'Unavailable' : product['quantity'] + ' ' + (product['stockUnit'] || product['unit'] || 'unit') }}</strong></div>
         <div><span>Minimum stock</span><strong>{{ product['minimumStock'] ?? '—' }}</strong></div>
         <div><span>Status</span><strong>{{ product['active'] ? 'Active' : 'Inactive' }}</strong></div>
       </div>

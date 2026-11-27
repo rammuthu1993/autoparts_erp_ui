@@ -10,7 +10,8 @@
     </header>
     <form [formGroup]="vm.form" (ngSubmit)="vm.createSale(false)">
       <div class="form-grid">
-        <label class="form-field"><span>Sale date *</span><input type="date" formControlName="saleDate"></label>
+        <label class="form-field"><span>Sale date *</span><input type="date" formControlName="saleDate">
+          @if(vm.fieldError(vm.form.controls.saleDate); as error) { <small class="field-error">{{ error }}</small> }</label>
         <label class="form-field"><span>Customer</span>
           <select formControlName="customerUuid">
             <option value="">Walk-in customer</option>
@@ -27,7 +28,9 @@
           </select>
         </label>
         <label class="form-field full-width"><span>Notes</span><textarea rows="2" formControlName="notes"
-            placeholder="Optional notes"></textarea></label>
+            placeholder="Optional notes"></textarea>
+          @if(vm.fieldError(vm.form.controls.notes); as error) { <small class="field-error">{{ error }}</small> }
+        </label>
       </div>
       <div class="line-heading">
         <div><strong>Products</strong><span>Add products and quantities for this invoice.</span></div>
@@ -46,11 +49,20 @@
             </select>
           </label>
           <label class="form-field"><span>Qty *</span><input type="number" min="0.001" step="0.001"
-              formControlName="quantity"></label>
+              formControlName="quantity" (input)="vm.validateSaleLine(i)">
+            @if(vm.fieldError(line.get('quantity')); as error) { <small class="field-error">{{ error }}</small> }
+            @if(vm.stockLoaded() && line.get('productUuid')?.value) {
+              <small class="field-hint">Available: {{ vm.availableQuantity(line.get('productUuid')?.value) ?? 0 }} {{ vm.products().find(p => p.uuid === line.get('productUuid')?.value)?.unit || 'units' }}</small>
+            }
+          </label>
           <label class="form-field"><span>Unit price (₹) *</span><input type="number" min="0" step="0.01"
-              formControlName="unitPrice"></label>
+              formControlName="unitPrice" (input)="vm.validateDiscount(i)">
+            @if(vm.fieldError(line.get('unitPrice')); as error) { <small class="field-error">{{ error }}</small> }
+          </label>
           <label class="form-field"><span>Discount (₹)</span><input type="number" min="0" step="0.01"
-              formControlName="discountAmount"></label>
+              formControlName="discountAmount" (input)="vm.validateDiscount(i)">
+            @if(vm.fieldError(line.get('discountAmount')); as error) { <small class="field-error">{{ error }}</small> }
+          </label>
           <button class="remove-line" type="button" (click)="vm.removeLine(i)" [disabled]="vm.productLines.length === 1"
             aria-label="Remove product">×</button>
         </div>
@@ -100,6 +112,12 @@
               <input type="text" value="0.00" aria-label="Amount received is zero for credit sale" disabled>
             } @else {
               <input type="number" min="0" step="0.01" formControlName="amountReceived">
+              @if(vm.form.controls.amountReceived.touched && vm.form.controls.amountReceived.hasError('min')) {
+                <small class="field-error">Amount cannot be negative.</small>
+              }
+              @if(vm.form.controls.amountReceived.touched && vm.form.controls.amountReceived.value != null && vm.form.controls.amountReceived.value > vm.taxPreview().grandTotal) {
+                <small class="field-error">Amount received cannot exceed the invoice total.</small>
+              }
             }
           </label>
         </div>

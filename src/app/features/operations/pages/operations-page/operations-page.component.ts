@@ -9,7 +9,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { catchError, finalize, of } from 'rxjs';
+import { catchError, finalize, forkJoin, of } from 'rxjs';
 import { API_BASE_URL } from '../../../../core/http/api/api-config';
 import { AuthStateService } from '../../../../core/auth/services/auth-state.service';
 import { ToastService } from '../../../../core/notifications/toast.service';
@@ -44,6 +44,8 @@ export class OperationsPageComponent implements OnInit {
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly rows = signal<any[]>([]);
+  readonly stockOptions = signal<Stock[]>([]);
+  readonly stockOptionsLoading = signal(false);
   readonly products = signal<Product[]>([]);
   readonly suppliers = signal<Supplier[]>([]);
   readonly registers = signal<Register[]>([]);
@@ -101,7 +103,7 @@ export class OperationsPageComponent implements OnInit {
   ngOnInit(): void {
     this.type.set(this.route.snapshot.data['operationType'] as OperationType);
     if (this.type() === 'purchases') { this.loadPurchases(); this.loadPurchaseLookups(); }
-    if (this.type() === 'inventory') this.loadStock();
+    if (this.type() === 'inventory') { this.loadStock(); this.loadStockOptions(); }
     if (this.type() === 'cash-register') this.loadRegisters();
     if (this.type() === 'daily-closing') this.loadClosings();
   }
@@ -183,13 +185,55 @@ export class OperationsPageComponent implements OnInit {
     this.http.get<Page<Stock>>(`${this.base}/inventory/stock/paged`, { params }).pipe(finalize(() => this.loading.set(false)))
       .subscribe({ next: r => this.setPage(r), error: () => this.toast.error('Inventory stock could not be loaded.') });
   }
-  openAdjustment(row: Stock): void { this.selected.set(row); this.adjustmentForm.reset({ quantityChange: null, reason: '', notes: '' }); this.showAdjust.set(true); }
+  /**
+   * Load every active product's current stock for the Add stock selector.
+   * The API caps page size at 100, so fetch the remaining pages explicitly.
+   */
+  loadStockOptions(): void {
+    this.stockOptionsLoading.set(true);
+    const url = `${this.base}/inventory/stock/paged`;
+    const params = new HttpParams().set('page', '0').set('size', '100').set('sortBy', 'productName').set('sortDir', 'asc');
+    this.http.get<Page<Stock>>(url, { params }).subscribe({
+      next: first => {
+        const pages = Math.max(1, Number(first.totalPages ?? 1));
+        if (pages <= 1) {
+          this.stockOptions.set(first.content ?? []);
+          this.stockOptionsLoading.set(false);
+          return;
+        }
+        const requests = Array.from({ length: pages - 1 }, (_, index) => {
+          const pageParams = new HttpParams().set('page', String(index + 1)).set('size', '100').set('sortBy', 'productName').set('sortDir', 'asc');
+          return this.http.get<Page<Stock>>(url, { params: pageParams });
+        });
+        forkJoin(requests).pipe(finalize(() => this.stockOptionsLoading.set(false))).subscribe({
+          next: rest => this.stockOptions.set([...(first.content ?? []), ...rest.flatMap(page => page.content ?? [])]),
+          error: () => this.toast.error('Product stock options could not be loaded.')
+        });
+      },
+      error: () => { this.stockOptions.set([]); this.stockOptionsLoading.set(false); this.toast.error('Product stock options could not be loaded.'); }
+    });
+  }
+
+  openNewStockAdjustment(): void {
+    this.selected.set(null);
+    this.adjustmentForm.reset({ quantityChange: null, reason: '', notes: '' });
+    this.showAdjust.set(true);
+  }
+  openAdjustment(row: Stock): void {
+    this.selected.set(row);
+    this.adjustmentForm.reset({ quantityChange: null, reason: '', notes: '' });
+    this.showAdjust.set(true);
+  }
+  selectAdjustmentProduct(productUuid: string): void {
+    this.selected.set(this.stockOptions().find(item => item.productUuid === productUuid) ?? null);
+  }
   adjustStock(): void {
     const stock = this.selected() as Stock | null;
-    if (!stock || this.adjustmentForm.invalid || this.saving()) { this.adjustmentForm.markAllAsTouched(); return; }
+    if (!stock) { this.toast.error('Select a product before adjusting stock.'); return; }
+    if (this.adjustmentForm.invalid || this.saving()) { this.adjustmentForm.markAllAsTouched(); return; }
     const v = this.adjustmentForm.getRawValue(); this.saving.set(true);
     this.http.post(`${this.base}/inventory/products/${stock.productUuid}/adjustments`, v).pipe(finalize(() => this.saving.set(false)))
-      .subscribe({ next: () => { this.showAdjust.set(false); this.selected.set(null); this.toast.success('Inventory adjustment saved.'); this.loadStock(); },
+      .subscribe({ next: () => { this.showAdjust.set(false); this.selected.set(null); this.toast.success('Inventory adjustment saved.'); this.loadStock(); this.loadStockOptions(); },
         error: () => this.toast.error('Stock adjustment failed. Verify the quantity and reason.') });
   }
 
@@ -272,7 +316,7 @@ export class OperationsPageComponent implements OnInit {
     const next = this.page() + delta; if (next < 0 || next >= this.totalPages()) return;
     this.page.set(next);
     if (this.type() === 'purchases') this.loadPurchases();
-    if (this.type() === 'inventory') this.loadStock();
+    if (this.type() === 'inventory') { this.loadStock(); this.loadStockOptions(); }
     if (this.type() === 'daily-closing') this.loadClosings();
   }
   onSearch(value: string): void { this.search.set(value); this.page.set(0); if (this.type() === 'purchases') this.loadPurchases(); if (this.type() === 'inventory') this.loadStock(); }

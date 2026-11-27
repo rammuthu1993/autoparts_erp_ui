@@ -11,6 +11,7 @@
       </p>
     </div>
     @if (type() === 'purchases' && canCreatePurchase) { <button class="primary" (click)="openPurchaseForm()">+ New purchase</button> }
+    @if (type() === 'inventory' && canAdjustStock) { <button class="primary" (click)="openNewStockAdjustment()">+ Add stock</button> }
     @if (type() === 'cash-register' && canCreateRegister) { <button class="primary" (click)="showRegisterForm.set(true)">+ New register</button> }
   </header>
 
@@ -98,8 +99,8 @@
   <app-purchase-draft-dialog [vm]="this" />
 }
 
-@if (showAdjust() && selected(); as stock) {
-  <app-stock-adjustment-dialog [vm]="this" [stock]="stock" />
+@if (showAdjust()) {
+  <app-stock-adjustment-dialog [vm]="this" [stock]="selected()" />
 }
 
 @if (selected(); as purchase) {

@@ -27,6 +27,12 @@ export class MastersService {
     return this.http.get<PageResponse<T>>(`${API_BASE_URL}${this.endpoints[type]}/paged`, { params });
   }
 
+  inventoryStock(uuid: string): Observable<{ productUuid: string; quantity: number; minimumStock: number; unit: string }> {
+    return this.http.get<{ productUuid: string; quantity: number; minimumStock: number; unit: string }>(
+      `${API_BASE_URL}/api/v1/inventory/products/${uuid}/stock`
+    );
+  }
+
   get<T>(type: MasterType, uuid: string): Observable<T> {
     return this.http.get<T>(`${API_BASE_URL}${this.endpoints[type]}/${uuid}`);
   }

@@ -5,7 +5,7 @@ import { MasterFormDialogComponent } from '../../components/master-form-dialog/m
 import { CommonModule } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { finalize, map, switchMap } from 'rxjs';
+import { catchError, finalize, forkJoin, map, of, switchMap } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { API_BASE_URL } from '../../../../core/http/api/api-config';
 import { AuthStateService } from '../../../../core/auth/services/auth-state.service';
@@ -72,6 +72,7 @@ export class MasterPageComponent implements OnInit {
   readonly selectedBarcode = signal<ProductBarcodeView | null>(null);
   readonly selectedProduct = signal<MasterRecord | null>(null);
   readonly productViewLoading = signal(false);
+  readonly stockByProduct = signal<Record<string, { quantity: number | null; unit: string }>>({});
   readonly categoryOptions = signal<MasterOption[]>([]);
   readonly brandOptions = signal<MasterOption[]>([]);
   readonly taxRateOptions = signal<MasterOption[]>([]);
@@ -242,8 +243,29 @@ export class MasterPageComponent implements OnInit {
 
   private applyPage(response: PageResponse<MasterRecord>): void {
     this.rows.set(response.content ?? []);
+    if (this.config().type === 'products') this.loadPageStock(response.content ?? []);
     this.totalElements.set(response.totalElements ?? 0);
     this.totalPages.set(response.totalPages ?? 0);
+  }
+
+  private loadPageStock(rows: MasterRecord[]): void {
+    const products = rows.filter(row => !!row.uuid);
+    if (!products.length) { this.stockByProduct.set({}); return; }
+    forkJoin(products.map(product =>
+      this.service.inventoryStock(product.uuid).pipe(
+        map(stock => ({ uuid: product.uuid, quantity: Number(stock.quantity ?? 0), unit: stock.unit || 'unit' })),
+        catchError(() => of({ uuid: product.uuid, quantity: null, unit: String(product['unit'] || 'unit') }))
+      )
+    )).subscribe(results => {
+      const current: Record<string, { quantity: number | null; unit: string }> = {};
+      results.forEach(item => current[item.uuid] = { quantity: item.quantity, unit: item.unit });
+      this.stockByProduct.set(current);
+    });
+  }
+
+  availableStock(row: MasterRecord): string {
+    const stock = this.stockByProduct()[row.uuid];
+    return !stock ? 'Loading…' : stock.quantity === null ? 'Unavailable' : `${stock.quantity} ${stock.unit}`;
   }
 
   onSearch(value: string): void {
@@ -265,7 +287,15 @@ export class MasterPageComponent implements OnInit {
     this.service.get<MasterRecord>('products', row.uuid).pipe(
       finalize(() => this.productViewLoading.set(false))
     ).subscribe({
-      next: product => this.selectedProduct.set(product),
+      next: product => {
+        this.service.inventoryStock(row.uuid).pipe(
+          catchError(() => of(null))
+        ).subscribe(stock => this.selectedProduct.set({
+          ...product,
+          quantity: stock?.quantity ?? null,
+          stockUnit: stock?.unit ?? product['unit'] ?? 'unit'
+        }));
+      },
       error: () => this.toast.error('Unable to load product details.', 'Product unavailable')
     });
   }

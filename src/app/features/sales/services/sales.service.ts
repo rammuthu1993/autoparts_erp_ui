@@ -75,6 +75,15 @@ export class SalesService {
     return this.http.post<SaleResponse>(`${this.base}/sales/${uuid}/payments`, request);
   }
 
+  stock(page = 0): Observable<PageResponse<{ productUuid: string; quantity: number; unit: string }>> {
+    // Backend caps page size at 100; request explicit pages instead of 1000.
+    const params = new HttpParams().set('page', String(page)).set('size', '100')
+      .set('sortBy', 'productName').set('sortDir', 'asc');
+    return this.http.get<PageResponse<{ productUuid: string; quantity: number; unit: string }>>(
+      `${this.base}/inventory/stock/paged`, { params }
+    );
+  }
+
   products(search = ''): Observable<PageResponse<ProductLookup>> {
     let params = new HttpParams().set('page', '0').set('size', '200').set('sortBy', 'name').set('sortDir', 'asc');
     if (search) params = params.set('search', search);

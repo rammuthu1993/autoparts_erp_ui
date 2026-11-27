@@ -5,7 +5,7 @@ import { SalesDetailsDialogComponent } from '../../components/sales-details-dial
 import { SalesCreateDialogComponent } from '../../components/sales-create-dialog/sales-create-dialog.component';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { finalize, forkJoin } from 'rxjs';
+import { finalize, forkJoin, of } from 'rxjs';
 import { AuthStateService } from '../../../../core/auth/services/auth-state.service';
 import { ToastService } from '../../../../core/notifications/toast.service';
 import {
@@ -43,6 +43,8 @@ export class SalesPageComponent implements OnInit {
 
   readonly rows = signal<SaleResponse[]>([]);
   readonly products = signal<ProductLookup[]>([]);
+  readonly availableStock = signal<Record<string, number>>({});
+  readonly stockLoaded = signal(false);
   readonly customers = signal<CustomerLookup[]>([]);
   readonly statusOptions = signal<SalesStatusOption[]>([]);
   readonly paymentStatusOptions = signal<SalesStatusOption[]>([]);
@@ -91,7 +93,7 @@ export class SalesPageComponent implements OnInit {
     customerUuid: [''],
     saleDate: [this.todayLocal(), Validators.required],
     supplyType: ['INTRA_STATE' as SupplyType, Validators.required],
-    notes: [''],
+    notes: ['', Validators.maxLength(1000)],
     paymentMethod: ['CREDIT' as PaymentMethod, Validators.required],
     amountReceived: [0 as number, [Validators.min(0)]],
     products: this.fb.array([this.createLine()])
@@ -117,7 +119,11 @@ export class SalesPageComponent implements OnInit {
   ngOnInit(): void {
     this.load();
     this.loadLookups();
-    this.form.valueChanges.subscribe(() => this.refreshTaxPreview());
+    this.loadStock();
+    this.form.valueChanges.subscribe(() => {
+      this.refreshTaxPreview();
+      this.productLines.controls.forEach((_, index) => this.validateSaleLine(index));
+    });
     this.refreshTaxPreview();
   }
 
@@ -139,8 +145,62 @@ export class SalesPageComponent implements OnInit {
   onProductSelected(index: number): void {
     const line = this.productLines.at(index);
     const product = this.products().find(item => item.uuid === line.get('productUuid')?.value);
-    if (product) line.patchValue({ unitPrice: product.sellingPrice, discountAmount: 0 });
+    if (product) {
+      line.patchValue({ unitPrice: product.sellingPrice, discountAmount: 0 });
+      this.validateSaleLine(index);
+    }
     this.refreshTaxPreview();
+  }
+
+  availableQuantity(productUuid: string | null | undefined): number | null {
+    if (!productUuid || !this.stockLoaded()) return null;
+    return this.availableStock()[productUuid] ?? 0;
+  }
+
+  validateSaleLine(index: number): void {
+    const line = this.productLines.at(index);
+    if (!line) return;
+    const productUuid = line.get('productUuid')?.value as string | null;
+    const quantityControl = line.get('quantity');
+    const qty = Number(quantityControl?.value ?? 0);
+    const available = this.availableQuantity(productUuid);
+    const duplicate = !!productUuid && this.productLines.controls.some((other, i) =>
+      i !== index && other.get('productUuid')?.value === productUuid
+    );
+    const errors: Record<string, boolean> = {};
+    if (available !== null && qty > available) errors['insufficientStock'] = true;
+    if (duplicate) errors['duplicateProduct'] = true;
+    const existing = { ...(quantityControl?.errors ?? {}) };
+    delete existing['insufficientStock'];
+    delete existing['duplicateProduct'];
+    quantityControl?.setErrors({ ...existing, ...errors });
+    if (!Object.keys(existing).length && !Object.keys(errors).length) quantityControl?.setErrors(null);
+    this.validateDiscount(index);
+  }
+
+  validateDiscount(index: number): void {
+    const line = this.productLines.at(index);
+    if (!line) return;
+    const quantity = Number(line.get('quantity')?.value ?? 0);
+    const price = Number(line.get('unitPrice')?.value ?? 0);
+    const discountControl = line.get('discountAmount');
+    const discount = Number(discountControl?.value ?? 0);
+    const errors = { ...(discountControl?.errors ?? {}) };
+    delete errors['exceedsLineValue'];
+    if (discount > quantity * price) errors['exceedsLineValue'] = true;
+    discountControl?.setErrors(Object.keys(errors).length ? errors : null);
+  }
+
+  fieldError(control: any): string | null {
+    // Show validation as the user types; do not wait for blur/touched.
+    if (!control || (!control.touched && !control.dirty)) return null;
+    if (control.hasError('required')) return 'This field is required.';
+    if (control.hasError('min')) return 'Enter a value greater than or equal to the minimum.';
+    if (control.hasError('insufficientStock')) return `Only ${this.availableQuantity(control.parent?.get('productUuid')?.value) ?? 0} available. Reduce the quantity.`;
+    if (control.hasError('duplicateProduct')) return 'This product is already added. Update its quantity in the existing row.';
+    if (control.hasError('exceedsLineValue')) return 'Discount cannot exceed the line amount (quantity × unit price).';
+    if (control.hasError('maxlength')) return 'Maximum allowed length exceeded.';
+    return null;
   }
 
   private roundMoney(value: number): number {
@@ -215,6 +275,39 @@ export class SalesPageComponent implements OnInit {
     }
   }
 
+  private loadStock(): void {
+    this.stockLoaded.set(false);
+    this.service.stock(0).subscribe({
+      next: first => {
+        const pages = Math.max(1, Number(first.totalPages ?? 1));
+        const remaining = Array.from({ length: Math.max(0, pages - 1) }, (_, i) => i + 1);
+        const requests = remaining.map(page => this.service.stock(page));
+        (requests.length ? forkJoin(requests) : of([])).subscribe({
+          next: rest => {
+            const records = [...(first.content ?? []), ...rest.flatMap(page => page.content ?? [])];
+            const stock: Record<string, number> = {};
+            for (const item of records) stock[item.productUuid] = Number(item.quantity ?? 0);
+            this.availableStock.set(stock);
+            this.stockLoaded.set(true);
+            this.productLines.controls.forEach((_, index) => this.validateSaleLine(index));
+          },
+          error: error => {
+            this.availableStock.set({});
+            this.stockLoaded.set(false);
+            this.toast.error(error?.error?.message || 'Could not load inventory availability. Check your inventory-view permission and retry.');
+          }
+        });
+      },
+      error: error => {
+        this.availableStock.set({});
+        this.stockLoaded.set(false);
+        this.toast.error(error?.error?.message || 'Could not load inventory availability. Check your inventory-view permission and retry.');
+      }
+    });
+  }
+
+  retryStockLoad(): void { this.loadStock(); }
+
   private loadLookups(): void {
     this.service.statusOptions().subscribe({ next: options => this.statusOptions.set(options ?? []) });
     this.service.paymentStatusOptions().subscribe({ next: options => this.paymentStatusOptions.set(options ?? []) });
@@ -281,6 +374,7 @@ export class SalesPageComponent implements OnInit {
 
   openCreate(): void {
     if (!this.canCreate()) return;
+    this.loadStock();
     this.form.reset({
       customerUuid: '', saleDate: this.todayLocal(),
       supplyType: 'INTRA_STATE', notes: '',
@@ -298,6 +392,14 @@ export class SalesPageComponent implements OnInit {
     this.refreshTaxPreview();
     if (this.taxPreview().missingTaxProducts.length) {
       this.toast.error('A selected product has no tax mapping effective on the sale date. Refresh products or correct its tax mapping.');
+      return;
+    }
+    this.productLines.controls.forEach((_, index) => {
+      this.productLines.at(index).markAllAsTouched();
+      this.validateSaleLine(index);
+    });
+    if (!this.stockLoaded() && completeAfterCreate) {
+      this.toast.error('Inventory availability could not be verified. Retry loading stock before completing this invoice.');
       return;
     }
     if (this.form.invalid || this.saving()) {
@@ -363,6 +465,10 @@ export class SalesPageComponent implements OnInit {
             this.openDetails(sale.uuid);
           }
         });
+      },
+      error: error => {
+        const message = error?.error?.message || error?.error?.detail || 'Sale could not be saved. Verify the entered values and available stock.';
+        this.toast.error(message);
       }
     });
   }
