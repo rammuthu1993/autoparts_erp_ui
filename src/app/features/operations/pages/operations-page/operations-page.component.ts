@@ -69,8 +69,6 @@ export class OperationsPageComponent implements OnInit {
   // Purchase filters & state
   readonly purchaseStatusFilter = signal('');
   readonly purchasePaymentFilter = signal('');
-  readonly purchaseSupplierFilter = signal('');
-  readonly purchaseOnlyOutstanding = signal(false);
   readonly purchaseFromDate = signal('');
   readonly purchaseToDate = signal('');
   readonly editingPurchaseUuid = signal<string | null>(null);
@@ -98,7 +96,11 @@ export class OperationsPageComponent implements OnInit {
 
   // Daily closing preview & filters
   readonly dailyPreview = signal<any | null>(null);
+  readonly openDailySessions = signal<Session[]>([]);
+  readonly openDailySessionsLoading = signal(false);
+  readonly openDailySessionsLoadError = signal(false);
   readonly previewLoading = signal(false);
+  readonly previewError = signal<string | null>(null);
   readonly closingFromDate = signal('');
   readonly closingToDate = signal('');
   readonly selectedClosing = signal<Closing | null>(null);
@@ -161,7 +163,7 @@ export class OperationsPageComponent implements OnInit {
   get canRecordPurchasePayment(): boolean { return this.auth.hasPermission('PURCHASES.PAYMENT_RECORD'); }
   get canAdjustStock(): boolean { return this.auth.hasPermission('INVENTORY.ADJUST'); }
   get canReconcileStock(): boolean { return this.auth.hasPermission('INVENTORY.RECONCILE'); }
-  get canCreateRegister(): boolean { return this.auth.hasPermission('CASH_REGISTER.CREATE'); }
+  get canCreateRegister(): boolean { return this.auth.hasPermission('CASH_REGISTER.CREATE') && !this.registers().some(r => r.active); }
   get canOpenRegister(): boolean { return this.auth.hasPermission('CASH_REGISTER.OPEN'); }
   get canCloseRegister(): boolean { return this.auth.hasPermission('CASH_REGISTER.CLOSE'); }
   get canPerformClosing(): boolean { return this.auth.hasPermission('DAILY_CLOSING.PERFORM'); }
@@ -172,7 +174,7 @@ export class OperationsPageComponent implements OnInit {
     if (this.type() === 'purchases') { this.loadPurchases(); this.loadPurchaseLookups(); }
     if (this.type() === 'inventory') { this.loadInventorySummary(); this.loadStock(); this.loadStockOptions(); }
     if (this.type() === 'cash-register') { this.loadRegisters(); this.loadSessionHistory(); }
-    if (this.type() === 'daily-closing') { this.loadClosings(); this.previewDailyClosing(); }
+    if (this.type() === 'daily-closing') { this.loadClosings(); this.loadOpenSessionsForDailyClosing(); this.previewDailyClosing(); }
   }
 
   private purchaseLine() {
@@ -199,38 +201,16 @@ export class OperationsPageComponent implements OnInit {
   }
 
   loadPurchases(): void {
-    if (this.purchaseFromDate() && this.purchaseToDate() && this.purchaseFromDate() > this.purchaseToDate()) {
-      this.toast.error('From date cannot be later than To date.');
-      return;
-    }
     this.loading.set(true);
     let params = new HttpParams().set('page', String(this.page())).set('size', '20').set('sortBy', 'id').set('sortDir', 'desc');
     if (this.search().trim()) params = params.set('search', this.search().trim());
     if (this.purchaseStatusFilter()) params = params.set('status', this.purchaseStatusFilter());
     if (this.purchasePaymentFilter()) params = params.set('paymentStatus', this.purchasePaymentFilter());
-    if (this.purchaseSupplierFilter()) {
-      const supplier = this.suppliers().find(x => x.uuid === this.purchaseSupplierFilter());
-      if (supplier) params = params.set('supplierUuid', supplier.uuid);
-    }
-    if (this.purchaseOnlyOutstanding()) params = params.set('onlyOutstanding', 'true');
     if (this.purchaseFromDate()) params = params.set('fromDate', this.purchaseFromDate());
     if (this.purchaseToDate()) params = params.set('toDate', this.purchaseToDate());
     this.http.get<Page<Purchase>>(`${this.base}/purchases/paged`, { params }).pipe(finalize(() => this.loading.set(false)))
       .subscribe({ next: r => this.setPage(r), error: () => this.toast.error('Purchases could not be loaded.') });
   }
-
-  resetPurchaseFilters(): void {
-    this.search.set('');
-    this.purchaseStatusFilter.set('');
-    this.purchasePaymentFilter.set('');
-    this.purchaseSupplierFilter.set('');
-    this.purchaseFromDate.set('');
-    this.purchaseToDate.set('');
-    this.purchaseOnlyOutstanding.set(false);
-    this.page.set(0);
-    this.loadPurchases();
-  }
-
   openPurchaseForm(): void {
     this.editingPurchaseUuid.set(null);
     this.purchaseForm.reset({ supplierId: null, supplierInvoiceNo: '', purchaseDate: this.today, notes: '' });
@@ -485,7 +465,7 @@ export class OperationsPageComponent implements OnInit {
   loadRegisters(): void {
     this.loading.set(true);
     this.http.get<Register[]>(`${this.base}/cash-registers`).pipe(finalize(() => this.loading.set(false)))
-      .subscribe({ next: rows => { this.rows.set(rows ?? []); for (const r of rows ?? []) this.loadLatestSession(r); },
+      .subscribe({ next: rows => { this.rows.set(rows ?? []); this.registers.set(rows ?? []); for (const r of rows ?? []) this.loadLatestSession(r); },
         error: () => this.toast.error('Cash registers could not be loaded.') });
   }
   private loadLatestSession(r: Register): void {
@@ -494,6 +474,7 @@ export class OperationsPageComponent implements OnInit {
     ).subscribe(s => this.activeSessions.update(current => ({ ...current, [r.uuid]: s })));
   }
   createRegister(): void {
+    if (this.registers().some(r => r.active)) { this.toast.error('This shop already has an active cash register. Reuse it for every shift.'); this.showRegisterForm.set(false); return; }
     if (this.registerForm.invalid || this.saving()) { this.registerForm.markAllAsTouched(); return; }
     this.saving.set(true);
     this.http.post(`${this.base}/cash-registers`, this.registerForm.getRawValue()).pipe(finalize(() => this.saving.set(false)))
@@ -646,10 +627,59 @@ export class OperationsPageComponent implements OnInit {
           this.showCloseSession.set(false);
           this.loadMyActiveCashSession();
           this.loadSessionHistory();
+          if (this.type() === 'daily-closing') {
+            this.loadOpenSessionsForDailyClosing();
+            this.previewDailyClosing();
+          }
           this.toast.success(`Session closed for ${r.name}.`);
         },
         error: e => this.toast.error(e?.error?.message || 'Cash session could not be closed.')
       });
+  }
+
+  loadOpenSessionsForDailyClosing(): void {
+    this.openDailySessionsLoading.set(true);
+    this.openDailySessionsLoadError.set(false);
+    let loadFailed = false;
+    forkJoin({
+      registers: this.http.get<Register[]>(`${this.base}/cash-registers`).pipe(
+        catchError(() => { loadFailed = true; return of([] as Register[]); })
+      ),
+      sessions: this.http.get<Page<Session>>(`${this.base}/cash-registers/sessions/paged`, {
+        params: new HttpParams().set('status', 'OPEN').set('page', '0').set('size', '100')
+      }).pipe(catchError(() => {
+        loadFailed = true;
+        return of({ content: [], page: 0, size: 100, totalElements: 0, totalPages: 0 } as Page<Session>);
+      }))
+    }).pipe(finalize(() => this.openDailySessionsLoading.set(false))).subscribe(({ registers, sessions }) => {
+      this.registers.set(registers ?? []);
+      const open = sessions.content ?? [];
+      const byRegister: Record<string, Session | null> = {};
+      for (const session of open) byRegister[session.registerUuid] = session;
+      this.activeSessions.update(current => ({ ...current, ...byRegister }));
+      this.openDailySessions.set(open);
+      this.openDailySessionsLoadError.set(loadFailed);
+    });
+  }
+
+  closeDailySession(session: Session): void {
+    if (!session?.uuid || !session.registerUuid) {
+      this.toast.error('The open-session record is missing its session or register identifier. Refresh and try again.');
+      this.loadOpenSessionsForDailyClosing();
+      return;
+    }
+
+    // The paged session response already contains registerUuid/registerName.
+    // Do not depend on a second register-list request being available on this page.
+    const register = this.registers().find(r => r.uuid === session.registerUuid) ?? ({
+      uuid: session.registerUuid,
+      registerCode: '',
+      name: session.registerName || 'Cash register',
+      active: true
+    } as Register);
+
+    this.activeSessions.update(current => ({ ...current, [register.uuid]: session }));
+    this.closeSession(register);
   }
 
   loadClosings(): void {
@@ -662,18 +692,50 @@ export class OperationsPageComponent implements OnInit {
   }
   previewDailyClosing(): void {
     const date = this.dailyForm.controls.businessDate.value;
-    if (!date) return;
+    if (!date) {
+      this.dailyPreview.set(null);
+      this.previewError.set('Select a business date before generating the preview.');
+      return;
+    }
+
     this.previewLoading.set(true);
-    this.http.get<any>(`${this.base}/daily-closings/preview`, { params: new HttpParams().set('businessDate', date) })
-      .pipe(finalize(() => this.previewLoading.set(false)))
+    this.previewError.set(null);
+    this.dailyPreview.set(null);
+
+    this.http.get<any>(`${this.base}/daily-closings/preview`, {
+      params: new HttpParams().set('businessDate', date)
+    }).pipe(finalize(() => this.previewLoading.set(false)))
       .subscribe({
-        next: p => this.dailyPreview.set(p),
-        error: () => this.dailyPreview.set(null)
+        next: preview => {
+          if (!preview || !preview.businessDate || !preview.summary) {
+            this.previewError.set('The server returned an incomplete daily-closing preview. Please refresh and try again.');
+            return;
+          }
+          // API LocalDate values are ISO yyyy-MM-dd; normalize defensively.
+          const responseDate = String(preview.businessDate).slice(0, 10);
+          if (responseDate !== date) {
+            this.previewError.set(`Preview date mismatch. Requested ${date}, received ${responseDate}.`);
+            return;
+          }
+          this.dailyPreview.set({ ...preview, businessDate: responseDate });
+        },
+        error: error => {
+          this.dailyPreview.set(null);
+          this.previewError.set(error?.error?.message || error?.error?.detail ||
+            `Could not generate the preview for ${date}. Check DAILY_CLOSING.VIEW permission and backend logs.`);
+          this.toast.error(this.previewError() || 'Daily-closing preview failed.');
+        }
       });
   }
   performClosing(): void {
     if (this.dailyForm.invalid || this.saving()) { this.dailyForm.markAllAsTouched(); return; }
     const v = this.dailyForm.getRawValue();
+    const preview = this.dailyPreview();
+    if (!preview || preview.businessDate !== v.businessDate || preview.canClose !== true) {
+      this.toast.error('Load a valid closing preview and resolve all blocking issues before finalizing.');
+      this.previewDailyClosing();
+      return;
+    }
     this.saving.set(true);
     const params = new HttpParams().set('businessDate', v.businessDate!).set('notes', v.notes ?? '');
     this.http.post<Closing>(`${this.base}/daily-closings`, null, { params }).pipe(finalize(() => this.saving.set(false)))

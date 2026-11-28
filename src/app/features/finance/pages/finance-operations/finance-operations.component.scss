@@ -30,3 +30,42 @@
 .finance-dialog-header h2{margin:0;color:#172b4d;font-size:19px}
 .finance-dialog-header p{margin:5px 0 0;color:#718096;font-size:11px}
 .finance-dialog-close{width:30px;height:30px;flex:0 0 30px;border:0;border-radius:7px;background:#f1f5f9;color:#475569;font-size:22px;cursor:pointer}
+
+
+/* Sales / purchase return detail dialogs must render as viewport overlays. */
+.finance-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(2px);
+}
+
+.finance-modal-backdrop > .finance-dialog {
+  position: relative;
+  width: min(1000px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  margin: auto;
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+}
+
+@media (max-width: 640px) {
+  .finance-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .finance-modal-backdrop > .finance-dialog {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+  }
+}

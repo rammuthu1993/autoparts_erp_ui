@@ -133,7 +133,26 @@ export class FinanceOperationsComponent {
     if(!s||!this.returnReason().trim()||!products.length){this.toast.warning('Select a sale, enter a return reason and at least one return quantity.');return;}
     this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/sales/${s.uuid}/returns`,{reason:this.returnReason().trim(),notes:this.returnNotes().trim()||undefined,products}).pipe(finalize(()=>this.saving.set(false))).subscribe({next:r=>{this.toast.success('Sales return created.');this.salesReturnDetail.set(r);this.showSalesReturnModal.set(false);this.loadSalesReturns(s.uuid);this.loadSalesReturnsRegister();this.selectSale(s.uuid,false);},error:e=>this.toast.error(e?.error?.message||'Unable to create sales return.')});
   }
-  showSalesReturn(uuid:string):void{this.http.get<any>(`${API_BASE_URL}/api/v1/sales/returns/${uuid}`).subscribe({next:r=>this.salesReturnDetail.set(r),error:e=>this.toast.error(e?.error?.message||'Unable to load return.')});}
+  showSalesReturn(uuid:string):void{
+    if (!uuid) {
+      this.toast.error('This sales return has no valid identifier.');
+      return;
+    }
+    this.salesReturnDetail.set(null);
+    this.loading.set(true);
+    this.http.get<any>(`${API_BASE_URL}/api/v1/sales/returns/${uuid}`)
+      .pipe(finalize(()=>this.loading.set(false)))
+      .subscribe({
+        next:r=>{
+          if (!r?.uuid) {
+            this.toast.error('The server returned an invalid sales return detail.');
+            return;
+          }
+          this.salesReturnDetail.set(r);
+        },
+        error:e=>this.toast.error(e?.error?.message||'Unable to load sales return details.')
+      });
+  }
   recordSalesRefund(r:any):void{const f=this.refundForm();if(f.amount<=0){this.toast.warning('Enter a valid refund amount.');return;}this.saving.set(true);this.http.post<any>(`${API_BASE_URL}/api/v1/sales/returns/${r.uuid}/refund`,f).pipe(finalize(()=>this.saving.set(false))).subscribe({next:x=>{this.salesReturnDetail.set(x);this.toast.success('Sales refund recorded.');this.loadSalesReturns(r.saleUuid);this.loadSalesReturnsRegister();this.loadMyActiveCashSession();},error:e=>this.toast.error(e?.error?.message||'Unable to record refund.')});}
   closeSalesReturnModal():void{this.showSalesReturnModal.set(false);}
   closeSalesReturnDetail():void{this.salesReturnDetail.set(null);}

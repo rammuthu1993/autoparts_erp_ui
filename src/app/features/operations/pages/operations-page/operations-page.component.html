@@ -12,7 +12,7 @@
     </div>
     @if (type() === 'purchases' && canCreatePurchase) { <button class="primary" (click)="openPurchaseForm()">+ New purchase</button> }
     @if (type() === 'inventory' && canAdjustStock) { <button class="primary" (click)="openNewStockAdjustment()">+ Add / adjust stock</button> }
-    @if (type() === 'cash-register' && canCreateRegister) { <button class="primary" (click)="showRegisterForm.set(true)">+ New register</button> }
+    @if (type() === 'cash-register' && canCreateRegister) { <button class="primary" (click)="showRegisterForm.set(true)">Configure Main Counter</button> }
   </header>
 
   @if (type() === 'purchases') {
@@ -30,14 +30,8 @@
         <option value="PARTIALLY_PAID">Partially paid</option>
         <option value="PAID">Paid</option>
       </select>
-      <select aria-label="Supplier" [value]="purchaseSupplierFilter()" (change)="purchaseSupplierFilter.set($any($event.target).value); page.set(0); loadPurchases()">
-        <option value="">All suppliers</option>
-        @for (supplier of suppliers(); track supplier.uuid) { <option [value]="supplier.uuid">{{ supplier.supplierName }}</option> }
-      </select>
-      <label class="outstanding-filter"><input type="checkbox" [checked]="purchaseOnlyOutstanding()" (change)="purchaseOnlyOutstanding.set($any($event.target).checked); page.set(0); loadPurchases()"> Outstanding only</label>
       <input type="date" aria-label="From date" [value]="purchaseFromDate()" (change)="purchaseFromDate.set($any($event.target).value); page.set(0); loadPurchases()">
       <input type="date" aria-label="To date" [value]="purchaseToDate()" (change)="purchaseToDate.set($any($event.target).value); page.set(0); loadPurchases()">
-      <button type="button" class="secondary" (click)="resetPurchaseFilters()">Reset filters</button>
       <button type="button" class="secondary" (click)="loadPurchases()">Refresh</button>
       <span class="record-count">{{ totalElements() }} records</span>
     </div>
@@ -230,10 +224,20 @@
         <input formControlName="notes" maxlength="1000" placeholder="Closing notes (optional)">
         <button class="secondary" type="button" (click)="previewDailyClosing()" [disabled]="previewLoading()">{{ previewLoading() ? 'Loading…' : 'Preview' }}</button>
         @if (canPerformClosing) {
-          <button class="primary" type="submit" [disabled]="saving() || (dailyPreview() && !dailyPreview().canClose)">{{ saving() ? 'Closing…' : 'Perform closing' }}</button>
+          <button class="primary" type="submit" [disabled]="saving() || previewLoading() || !dailyPreview() || dailyPreview().businessDate !== dailyForm.controls.businessDate.value || !dailyPreview().canClose" [title]="!dailyPreview()?.canClose ? 'Generate a valid preview and close all open cash sessions first.' : 'Finalize this business date'">{{ saving() ? 'Closing…' : 'Perform closing' }}</button>
         }
       </form>
     </section>
+
+    @if (previewError()) {
+      <section class="table-card preview-error" role="alert">
+        <strong>Daily-closing preview could not be loaded</strong>
+        <p>{{ previewError() }}</p>
+        <button type="button" class="secondary" (click)="previewDailyClosing()" [disabled]="previewLoading()">Retry preview</button>
+      </section>
+    } @else if (previewLoading()) {
+      <section class="table-card preview-loading" aria-live="polite">Generating daily-closing preview…</section>
+    }
 
     @if (dailyPreview(); as prev) {
       <section class="table-card preview-card">
@@ -246,8 +250,61 @@
           <div><span>Cash reconciliation ({{ prev.summary.registerCount }} closed sessions)</span><strong>Expected {{ money(prev.summary.cashExpectedTotal) }} · Actual {{ money(prev.summary.cashActualTotal) }} · Diff {{ money(prev.summary.cashDifferenceTotal) }}</strong></div>
         </div>
         @if (prev.validationErrors?.length) {
-          @for (err of prev.validationErrors; track err) { <p class="field-error">{{ err }}</p> }
+          <div class="validation-list">
+            <strong>Closing is blocked until these issues are resolved</strong>
+            @for (err of prev.validationErrors; track err) { <p class="field-error">{{ err }}</p> }
+          </div>
+        } @else if (!prev.canClose) {
+          <p class="field-error">This business date is not eligible for closing yet. Refresh the preview after resolving the blocking conditions.</p>
+        } @else {
+          <p class="success-hint">Preview is valid. You can perform daily closing.</p>
         }
+      </section>
+    }
+
+    @if (openDailySessionsLoading()) {
+      <section class="table-card open-session-warning">
+        <p>Checking open cash register sessions…</p>
+      </section>
+    } @else if (openDailySessionsLoadError()) {
+      <section class="table-card open-session-warning">
+        <strong>Could not verify open cash sessions.</strong>
+        <p>Daily closing is blocked until the cash-session list can be checked. Refresh the session list or ask an administrator to verify CASH_REGISTER.VIEW access.</p>
+        <button type="button" class="secondary" (click)="loadOpenSessionsForDailyClosing()">Retry</button>
+      </section>
+    } @else if (openDailySessions().length > 0) {
+      <section class="table-card open-session-warning">
+        <div class="open-session-heading">
+          <div>
+            <strong>{{ openDailySessions().length }} open cash register session(s) need attention</strong>
+            <p>Close every open session before performing daily closing. You can close them here without leaving this page.</p>
+          </div>
+          <span class="warning-pill">Action required</span>
+        </div>
+        <div class="open-session-list">
+          @for (session of openDailySessions(); track session.uuid) {
+            <div class="open-session-row">
+              <div class="open-session-info">
+                <strong>{{ session.registerName }}</strong>
+                <span>Opened {{ session.openedAt | date:'dd MMM yyyy, h:mm a' }}</span>
+              </div>
+              <div class="open-session-cash">
+                <span>Expected cash</span>
+                <strong>{{ money(session.expectedClosingBalance) }}</strong>
+              </div>
+              @if (canCloseRegister) {
+                <button type="button" class="primary" [disabled]="saving()" (click)="closeDailySession(session)">Close &amp; reconcile</button>
+              } @else {
+                <span class="permission-hint">CASH_REGISTER.CLOSE permission required</span>
+              }
+            </div>
+          }
+        </div>
+      </section>
+    } @else {
+      <section class="table-card open-session-clear">
+        <strong>No open cash sessions</strong>
+        <span>All cash sessions are closed. You can proceed with daily closing once the preview is valid.</span>
       </section>
     }
 
